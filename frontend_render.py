@@ -265,7 +265,7 @@ def index():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Sale Scout - John Lewis Deals</title>
+        <title>Pegasus Monitors - John Lewis Deals</title>
         <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
         <meta http-equiv="Pragma" content="no-cache">
         <meta http-equiv="Expires" content="0">
@@ -276,7 +276,7 @@ def index():
         <div class="header">
             <img src="https://i.ibb.co/60C5BBMV/Pegasus-removebg-preview.png" alt="Pegasus Logo" class="logo">
             <div class="header-title">
-                <h2>Sale Scout</h2>
+                <h2>PEGASUS MONITORS</h2>
                 <h3>John Lewis Deals</h3>
                 <p class="tagline">Acquiring Deals</p>
                 <p>Last updated: {{ last_updated }} | Auto-refreshing every 30m <span class="spinner"></span> | Found {{ total_deals }} deals</p>
@@ -353,7 +353,7 @@ def index():
                         {% endif %}
                     </div>
                     <div class="deal-info">
-                        <h3 class="deal-name">{{ deal['Product Name'][:70] }}{% if deal['Product Name']|length > 70 %}...{% endif }}</h3>
+                        <h3 class="deal-name">{{ deal['Product Name'][:70] }}{% if deal['Product Name']|length > 70 %}...{% endif %}</h3>
                         <div class="deal-meta">
                             <div>Current: £{{ "%.2f"|format(deal['Current Price']) if deal['Current Price'] is not none else 'N/A' }}</div>
                             <div>Original: £{{ "%.2f"|format(deal['Original Price']) if deal['Original Price'] is not none else 'N/A' }}</div>
