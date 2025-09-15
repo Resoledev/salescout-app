@@ -281,6 +281,9 @@ def index():
                 <p class="tagline">Acquiring Deals</p>
                 <p>Last updated: {{ last_updated }} | Auto-refreshing every 30m <span class="spinner"></span> | Found {{ total_deals }} deals</p>
             </div>
+            <button class="theme-toggle" aria-label="Toggle dark/light mode">
+                <span class="theme-icon">🌙</span>
+            </button>
         </div>
         <div class="stats-hero">
             <div class="stat-card">
@@ -327,6 +330,7 @@ def index():
                         <option value="200" {% if per_page == 200 %}selected{% endif %}>200 per page</option>
                     </select>
                     <button type="submit">Apply</button>
+                    <button type="button" class="reset-button">Reset Filters</button>
                 </div>
             </form>
             {% if errors %}
@@ -341,6 +345,7 @@ def index():
             {% endif %}
             {% if deals %}
             <div class="deals-grid">
+                <div class="loading-spinner" style="display: none;"></div>
                 {% for deal in deals %}
                 <div class="deal-card" data-favorite="{% if deal['Product Name'] in favorites %}true{% else %}false{% endif %}">
                     <div class="image-placeholder">
