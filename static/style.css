@@ -110,7 +110,7 @@ button, .btn {
 @media (max-width: 600px) {
     .header {
         flex-direction: column;
-        align-items: flex-start;
+        align-items: center;
         padding: 15px 20px;
         gap: 10px;
     }
@@ -126,7 +126,7 @@ button, .btn {
     }
 
     .header-title {
-        text-align: left;
+        text-align: center;
     }
 
     .header-title h2 {
@@ -517,7 +517,30 @@ footer {
     font-weight: 600;
 }
 
+/* Mobile adjustments for deal cards and other elements */
 @media (max-width: 768px) {
-    .deal-card { grid-template-columns: 1fr; }
-    .search-filter-bar { flex-direction: column; align-items: stretch; }
+    .deal-card {
+        grid-template-columns: 1fr;
+    }
+
+    .deal-action {
+        flex-direction: row;
+        gap: 8px;
+        justify-content: center;
+    }
+
+    .btn-view {
+        padding: 8px 16px;
+        font-size: 0.9rem;
+    }
+
+    .btn-favorite {
+        padding: 6px 10px;
+        font-size: 1rem;
+    }
+
+    .search-filter-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
 }
