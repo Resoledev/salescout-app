@@ -36,7 +36,7 @@ button, .btn {
     position: relative;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     gap: 20px;
     color: var(--text-primary);
     z-index: 2;
@@ -72,7 +72,7 @@ button, .btn {
 
 .header-title {
     flex-grow: 1;
-    text-align: left;
+    text-align: center;
 }
 
 .header-title h2 {
@@ -150,7 +150,7 @@ button, .btn {
 @media (min-width: 601px) {
     .header {
         flex-direction: row;
-        justify-content: space-between;
+        justify-content: center;
         padding: 20px 40px;
     }
 
@@ -537,6 +537,12 @@ footer {
     .btn-favorite {
         padding: 6px 10px;
         font-size: 1rem;
+    }
+
+    .image-placeholder, .deal-image {
+        margin: 0 auto;
+        display: flex;
+        justify-content: center;
     }
 
     .search-filter-bar {
