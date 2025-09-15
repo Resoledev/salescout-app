@@ -136,26 +136,35 @@ button, .btn {
 }
 
 .theme-toggle {
-    padding: 8px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid var(--border);
+    padding: 12px;
+    background: var(--bg-secondary);
+    border: 2px solid var(--accent);
     border-radius: 50%;
     cursor: pointer;
-    font-size: 1.2rem;
-    transition: background 0.2s, transform 0.2s;
+    font-size: 1.5rem;
+    transition: background 0.2s, transform 0.2s, border-color 0.2s;
+    z-index: 3;
+    min-width: 40px;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .light-mode .theme-toggle {
-    background: rgba(0, 0, 0, 0.1);
+    background: rgba(0, 0, 0, 0.15);
+    border-color: var(--accent);
 }
 
 .theme-toggle:hover {
     background: var(--accent);
+    border-color: var(--text-primary);
     transform: scale(1.1);
 }
 
 .theme-icon {
     display: inline-block;
+    line-height: 1;
 }
 
 .light-mode .theme-icon::before {
@@ -207,6 +216,11 @@ button, .btn {
 
     .header-title p {
         font-size: 0.8rem;
+    }
+
+    .theme-toggle {
+        margin-top: 10px;
+        align-self: center;
     }
 }
 
@@ -396,21 +410,31 @@ button, .btn {
     display: grid;
     gap: 20px;
     position: relative;
+    min-height: 200px; /* Ensure space for spinner */
 }
 
-.deals-grid.loading .deal-card, .deals-grid.loading .empty {
-    display: none;
+.deals-grid.loading .deal-card,
+.deals-grid.loading .empty {
+    display: none; /* Hide cards and empty state during loading */
+}
+
+.deals-grid .loading-spinner {
+    display: none; /* Hidden by default */
+    width: 48px;
+    height: 48px;
+    margin: 40px auto;
+    border: 5px solid var(--accent);
+    border-top: 5px solid transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
 }
 
 .deals-grid.loading .loading-spinner {
-    display: block;
-    width: 40px;
-    height: 40px;
-    margin: 20px auto;
-    border: 4px solid var(--accent);
-    border-top: 4px solid transparent;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
+    display: block; /* Show spinner only when loading */
 }
 
 .deal-card {
@@ -595,7 +619,7 @@ button, .btn {
     font-weight: 500;
 }
 
-.spinner, .loading-spinner {
+.spinner {
     display: inline-block;
     width: 16px;
     height: 16px;
@@ -606,8 +630,8 @@ button, .btn {
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% { transform: translate(-50%, -50%) rotate(0deg); }
+    100% { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
 footer {
