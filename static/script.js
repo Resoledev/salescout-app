@@ -34,6 +34,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const dealsGrid = document.querySelector('.deals-grid');
     const paginationLinks = document.querySelectorAll('.pagination a');
 
+    // Remove loading class when page is fully loaded
+    window.addEventListener('load', () => {
+        dealsGrid.classList.remove('loading');
+    });
+
+    // Also ensure loading class is removed on DOM content loaded
+    dealsGrid.classList.remove('loading');
+
     if (form) {
         form.addEventListener('submit', () => {
             dealsGrid.classList.add('loading');
@@ -46,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Favorite Button Logic (existing)
+    // Favorite Button Logic
     document.querySelectorAll('.btn-favorite').forEach(button => {
         button.addEventListener('click', () => {
             const product = button.getAttribute('data-product');
