@@ -5,9 +5,26 @@ import traceback
 import ast
 from flask import Flask, render_template_string, request, make_response
 from datetime import datetime
+import json
 
 app = Flask(__name__)
 CSV_FILE = os.environ.get("CSV_FILE", "/opt/render/project/src/johnlewisv2.csv")
+
+# NEW: Load price history for recently reduced detection
+PRICE_HISTORY_FILE = os.path.join(os.path.dirname(CSV_FILE), 'state', 'price_history.json')
+
+def load_price_history():
+    """Load price history from file."""
+    try:
+        with open(PRICE_HISTORY_FILE, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+def is_recently_reduced(product_id):
+    """Check if a product is recently reduced based on price history."""
+    price_history = load_price_history()
+    return price_history.get(product_id, {}).get("recently_reduced", False)
 
 def _extract_image_from_row(row):
     """
@@ -82,7 +99,8 @@ def _clean_sizes_field(sizes_value, category):
     available_str = ", ".join(available) if available else "N/A"
     return cleaned, available, list(set(filterable_sizes))
 
-def load_deals(filter_in_stock=False, search_query="", category_filter=None, size_filter=None, sort_by=None, page=1, per_page=50):
+def load_deals(filter_in_stock=False, search_query="", category_filter=None, size_filter=None, 
+              sort_by=None, page=1, per_page=50, recently_reduced_filter=False):  # NEW: Recently reduced filter
     """Load deals from CSV with pagination and sort by specified criterion."""
     deals = []
     errors = []
@@ -186,7 +204,16 @@ def load_deals(filter_in_stock=False, search_query="", category_filter=None, siz
                 else:
                     stock_status = "Out of Stock"
 
+                # NEW: Check if product is recently reduced
+                product_id = row.get('Product ID', '')
+                is_recent_reduction = False
+                
+                # Check price history first
+                if product_id:
+                    is_recent_reduction = is_recently_reduced(product_id)
+
                 deal = {
+                    "Product ID": product_id,
                     "Product Name": row.get('Product Name', '').strip(),
                     "Current Price": current_price,
                     "Original Price": original_price,
@@ -199,7 +226,8 @@ def load_deals(filter_in_stock=False, search_query="", category_filter=None, siz
                     "Event Type": row.get("Event Type", "N/A").strip().capitalize(),
                     "Timestamp": row.get("Timestamp", "N/A").strip(),
                     "Image": row.get("Image", "").strip(),
-                    "Category": category
+                    "Category": category,
+                    "Recently Reduced": is_recent_reduction  # NEW: Add recently reduced flag
                 }
 
                 if filter_in_stock and "In Stock" not in deal["Stock Status"]:
@@ -210,6 +238,9 @@ def load_deals(filter_in_stock=False, search_query="", category_filter=None, siz
                     continue
                 if size_filter and size_filter.lower() not in [s.lower() for s in deal["Filterable Sizes"]]:
                     continue
+                # NEW: Recently reduced filter
+                if recently_reduced_filter and not deal["Recently Reduced"]:
+                    continue
 
                 deals.append(deal)
 
@@ -219,6 +250,8 @@ def load_deals(filter_in_stock=False, search_query="", category_filter=None, siz
                 deals.sort(key=lambda x: x['Current Price'] or float('inf'))
             elif sort_by == "timestamp":
                 deals.sort(key=lambda x: datetime.strptime(x['Timestamp'], '%Y-%m-%d %H:%M:%S') if x['Timestamp'] != 'N/A' else datetime.min, reverse=True)
+            elif sort_by == "recently_reduced":  # NEW: Sort by recently reduced
+                deals.sort(key=lambda x: (x['Recently Reduced'], x['Discount'] or 0), reverse=True)
             else:
                 deals.sort(key=lambda x: x['Discount'] or 0, reverse=True)
 
@@ -244,9 +277,21 @@ def index():
     category_filter = request.form.get('category_filter', '')
     size_filter = request.form.get('size_filter', '')
     sort_by = request.form.get('sort_by', '')
+    recently_reduced_filter = request.form.get('recently_reduced_filter') == 'on'  # NEW
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
-    deals, errors, total_deals, total_pages = load_deals(filter_in_stock=filter_in_stock, search_query=search_query, category_filter=category_filter, size_filter=size_filter, sort_by=sort_by, page=page, per_page=per_page)
+    
+    deals, errors, total_deals, total_pages = load_deals(
+        filter_in_stock=filter_in_stock, 
+        search_query=search_query, 
+        category_filter=category_filter, 
+        size_filter=size_filter, 
+        sort_by=sort_by, 
+        page=page, 
+        per_page=per_page,
+        recently_reduced_filter=recently_reduced_filter  # NEW
+    )
+    
     num_deals = len(deals)
     last_updated = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
@@ -258,6 +303,9 @@ def index():
             for size in deal["Filterable Sizes"]:
                 all_sizes.add(size)
     size_options = sorted(all_sizes, key=lambda x: x if x not in ["Other", "One Size"] else "Z")
+
+    # Count recently reduced deals for stats
+    recently_reduced_count = sum(1 for deal in deals if deal.get("Recently Reduced", False))
 
     template = """
     <!DOCTYPE html>
@@ -301,12 +349,18 @@ def index():
                 <h2 class="stat-number">{{ deals|selectattr('Stock Status', 'equalto', 'In Stock')|list|length }}</h2>
                 <p class="stat-label">In Stock</p>
             </div>
+            <div class="stat-card">
+                <div class="stat-icon"></div>
+                <h2 class="stat-number">{{ recently_reduced_count }}</h2>
+                <p class="stat-label">Recently Reduced</p>
+            </div>
         </div>
         <div class="container">
             <form class="search-filter-bar" method="POST" action="?per_page={{ per_page }}">
                 <input type="text" name="search_query" class="search-input" placeholder="Search deals by name..." value="{{ search_query }}">
                 <div class="filter-bar">
                     <label><input type="checkbox" name="filter_in_stock" {% if filter_in_stock %}checked{% endif %}> Show only in-stock items</label>
+                    <label><input type="checkbox" name="recently_reduced_filter" {% if recently_reduced_filter %}checked{% endif %}> Recently Reduced</label>
                     <select name="category_filter" class="category-input">
                         <option value="">All Categories</option>
                         <option value="john lewis branded" {% if category_filter == 'john lewis branded' %}selected{% endif %}>John Lewis Branded</option>
@@ -320,6 +374,7 @@ def index():
                     </select>
                     <select name="sort_by" class="sort-input">
                         <option value="discount" {% if not sort_by or sort_by == 'discount' %}selected{% endif %}>Sort By: Discount (High to Low)</option>
+                        <option value="recently_reduced" {% if sort_by == 'recently_reduced' %}selected{% endif %}>Sort By: Recently Reduced First</option>
                         <option value="net_reduction" {% if sort_by == 'net_reduction' %}selected{% endif %}>Sort By: Net Reduction (High to Low)</option>
                         <option value="price" {% if sort_by == 'price' %}selected{% endif %}>Sort By: Price (Low to High)</option>
                         <option value="timestamp" {% if sort_by == 'timestamp' %}selected{% endif %}>Sort By: Newest First</option>
@@ -347,7 +402,7 @@ def index():
             <div class="deals-grid">
                 <div class="loading-spinner" style="display: none;"></div>
                 {% for deal in deals %}
-                <div class="deal-card" data-favorite="{% if deal['Product Name'] in favorites %}true{% else %}false{% endif %}">
+                <div class="deal-card {% if deal['Recently Reduced'] %}recently-reduced{% endif %}" data-favorite="{% if deal['Product Name'] in favorites %}true{% else %}false{% endif %}">
                     <div class="image-placeholder">
                         {% if deal['Image'] %}
                         <a href="{{ deal['Image'] }}" target="_blank">
@@ -358,7 +413,10 @@ def index():
                         {% endif %}
                     </div>
                     <div class="deal-info">
-                        <h3 class="deal-name">{{ deal['Product Name'][:70] }}{% if deal['Product Name']|length > 70 %}...{% endif %}</h3>
+                        <h3 class="deal-name">
+                            {{ deal['Product Name'][:70] }}{% if deal['Product Name']|length > 70 %}...{% endif %}
+                            {% if deal['Recently Reduced'] %}<span class="recently-reduced-badge">🔥 Recently Reduced</span>{% endif %}
+                        </h3>
                         <div class="deal-meta">
                             <div>Current: £{{ "%.2f"|format(deal['Current Price']) if deal['Current Price'] is not none else 'N/A' }}</div>
                             <div>Original: £{{ "%.2f"|format(deal['Original Price']) if deal['Original Price'] is not none else 'N/A' }}</div>
@@ -381,7 +439,7 @@ def index():
             <div class="pagination">
                 {% if total_pages > 1 %}
                     {% for p in range(1, total_pages + 1) %}
-                        <a href="?page={{ p }}&per_page={{ per_page }}{% if filter_in_stock %}&filter_in_stock=on{% endif %}{% if search_query %}&search_query={{ search_query }}{% endif %}{% if category_filter %}&category_filter={{ category_filter }}{% endif %}{% if size_filter %}&size_filter={{ size_filter }}{% endif %}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}" class="{% if p == page %}active{% endif %}">{{ p }}</a>
+                        <a href="?page={{ p }}&per_page={{ per_page }}{% if filter_in_stock %}&filter_in_stock=on{% endif %}{% if recently_reduced_filter %}&recently_reduced_filter=on{% endif %}{% if search_query %}&search_query={{ search_query }}{% endif %}{% if category_filter %}&category_filter={{ category_filter }}{% endif %}{% if size_filter %}&size_filter={{ size_filter }}{% endif %}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}" class="{% if p == page %}active{% endif %}">{{ p }}</a>
                     {% endfor %}
                 {% endif %}
             </div>
@@ -411,7 +469,8 @@ def index():
                                                    filter_in_stock=filter_in_stock, search_query=search_query, errors=errors,
                                                    cache_bust=cache_bust, category_filter=category_filter, size_filter=size_filter,
                                                    size_options=size_options, sort_by=sort_by, favorites=favorites,
-                                                   total_pages=total_pages, page=page, total_deals=total_deals, per_page=per_page))
+                                                   total_pages=total_pages, page=page, total_deals=total_deals, per_page=per_page,
+                                                   recently_reduced_filter=recently_reduced_filter, recently_reduced_count=recently_reduced_count))
 
     response.headers['Content-Security-Policy'] = "default-src 'self'; img-src *; script-src 'self' 'unsafe-eval'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com;"
     print(f"Applied CSP: {response.headers['Content-Security-Policy']}")
