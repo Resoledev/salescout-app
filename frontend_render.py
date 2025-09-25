@@ -108,8 +108,8 @@ def _clean_sizes_field(sizes_value, category):
     available_str = ", ".join(available) if available else "N/A"
     return cleaned, available, list(set(filterable_sizes))
 
-def load_deals(monitor, filter_in_stock=False, search_query="", category_filter=None, size_filter=None, 
-              sort_by=None, page=1, per_page=50, recently_reduced_filter=False):
+def load_deals(monitor, search_query="", category_filter=None, size_filter=None, 
+              sort_by=None, page=1, per_page=50):
     """Load deals from CSV with pagination and sort by specified criterion."""
     deals = []
     errors = []
@@ -244,15 +244,11 @@ def load_deals(monitor, filter_in_stock=False, search_query="", category_filter=
                     "Recently Reduced": is_recent_reduction
                 }
 
-                if filter_in_stock and "In Stock" not in deal["Stock Status"]:
-                    continue
                 if search_query and search_query.lower() not in deal["Product Name"].lower():
                     continue
                 if category_filter and deal["Category"].lower() != category_filter.lower():
                     continue
                 if size_filter and size_filter.lower() not in [s.lower() for s in deal["Filterable Sizes"]]:
-                    continue
-                if recently_reduced_filter and not deal["Recently Reduced"]:
                     continue
 
                 deals.append(deal)
@@ -349,8 +345,8 @@ def monitor_page(monitor):
     per_page = int(request.args.get('per_page', 50))
     
     deals, errors, total_deals, total_pages = load_deals(
-        monitor, filter_in_stock, search_query, category_filter, 
-        size_filter, sort_by, page, per_page, recently_reduced_filter
+        monitor, search_query, category_filter, 
+        size_filter, sort_by, page, per_page
     )
     
     num_deals = len(deals)
@@ -408,11 +404,6 @@ def monitor_page(monitor):
             </div>
             <div class="stat-card">
                 <div class="stat-icon"></div>
-                <h2 class="stat-number">{{ deals|selectattr('Stock Status', 'equalto', 'In Stock')|list|length }}</h2>
-                <p class="stat-label">In Stock</p>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon"></div>
                 <h2 class="stat-number">{{ recently_reduced_count }}</h2>
                 <p class="stat-label">Recently Reduced</p>
             </div>
@@ -421,8 +412,6 @@ def monitor_page(monitor):
             <form class="search-filter-bar" method="POST" action="/{{ monitor }}?per_page={{ per_page }}">
                 <input type="text" name="search_query" class="search-input" placeholder="Search deals by name..." value="{{ search_query }}">
                 <div class="filter-bar">
-                    <label><input type="checkbox" name="filter_in_stock" {% if filter_in_stock %}checked{% endif %}> Show only in-stock items</label>
-                    <label><input type="checkbox" name="recently_reduced_filter" {% if recently_reduced_filter %}checked{% endif %}> Recently Reduced</label>
                     <select name="category_filter" class="category-input">
                         <option value="">All Categories</option>
                         <option value="john lewis branded" {% if category_filter == 'john lewis branded' %}selected{% endif %}>John Lewis Branded</option>
@@ -501,7 +490,7 @@ def monitor_page(monitor):
             <div class="pagination">
                 {% if total_pages > 1 %}
                     {% for p in range(1, total_pages + 1) %}
-                        <a href="/{{ monitor }}?page={{ p }}&per_page={{ per_page }}{% if filter_in_stock %}&filter_in_stock=on{% endif %}{% if recently_reduced_filter %}&recently_reduced_filter=on{% endif %}{% if search_query %}&search_query={{ search_query }}{% endif %}{% if category_filter %}&category_filter={{ category_filter }}{% endif %}{% if size_filter %}&size_filter={{ size_filter }}{% endif %}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}" class="{% if p == page %}active{% endif %}">{{ p }}</a>
+                        <a href="/{{ monitor }}?page={{ p }}&per_page={{ per_page }}{% if search_query %}&search_query={{ search_query }}{% endif %}{% if category_filter %}&category_filter={{ category_filter }}{% endif %}{% if size_filter %}&size_filter={{ size_filter }}{% endif %}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}" class="{% if p == page %}active{% endif %}">{{ p }}</a>
                     {% endfor %}
                 {% endif %}
             </div>
@@ -535,7 +524,6 @@ def monitor_page(monitor):
         deals=deals, 
         num_deals=num_deals, 
         last_updated=last_updated,
-        filter_in_stock=filter_in_stock, 
         search_query=search_query, 
         errors=errors,
         cache_bust=cache_bust, 
@@ -548,7 +536,6 @@ def monitor_page(monitor):
         page=page, 
         total_deals=total_deals, 
         per_page=per_page,
-        recently_reduced_filter=recently_reduced_filter, 
         recently_reduced_count=recently_reduced_count
     ))
 
