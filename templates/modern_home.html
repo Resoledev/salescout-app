@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sale Scout - AI-Powered Deal Discovery Across Premium Retailers</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: rgba(26, 31, 46, 0.8);
+            --accent: #10b981;
+            --accent-secondary: #8b5cf6;
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.7);
+            --text-muted: rgba(255, 255, 255, 0.5);
+            --border: rgba(255, 255, 255, 0.1);
+            --gradient-primary: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            --gradient-secondary: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+            --gradient-bg: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+            --glass-blur: blur(20px);
+        }
+
+        body.light-mode {
+            --bg-primary: #ffffff;
+            --bg-secondary: rgba(255, 255, 255, 0.9);
+            --accent: #059669;
+            --accent-secondary: #7c3aed;
+            --text-primary: #1a1a1a;
+            --text-secondary: rgba(0, 0, 0, 0.7);
+            --text-muted: rgba(0, 0, 0, 0.5);
+            --border: rgba(0, 0, 0, 0.1);
+            --gradient-bg: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+        .header {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            backdrop-filter: var(--glass-blur); border-bottom: 1px solid var(--border);
+            background: rgba(10, 14, 26, 0.8);
+        }
+
+        .light-mode .header { background: rgba(255, 255, 255, 0.8); }
+
+        .nav {
+            display: flex; align-items: center; justify-content: space-between;
+            height: 80px; max-width: 1200px; margin: 0 auto; padding: 0 24px;
+        }
+
+        .logo {
+            display: flex; align-items: center; gap: 12px;
+            font-size: 24px; font-weight: 800; color: var(--text-primary); text-decoration: none;
+        }
+
+        .logo-icon {
+            width: 40px; height: 40px; background: var(--gradient-primary);
+            border-radius: 12px; display: flex; align-items: center; justify-content: center;
+            font-size: 18px; font-weight: 700; color: white;
+        }
+
+        .theme-toggle {
+            width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--border);
+            background: transparent; color: var(--text-secondary); cursor: pointer;
+            transition: all 0.2s ease; display: flex; align-items: center; justify-content: center;
+        }
+
+        .theme-toggle:hover { background: var(--border); color: var(--text-primary); }
+
+        .hero {
+            min-height: 100vh; display: flex; align-items: center; position: relative;
+            padding: 120px 0 80px; background: var(--gradient-bg);
+        }
+
+        .hero::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(600px circle at 50% 0%, rgba(16, 185, 129, 0.1), transparent 50%);
+            pointer-events: none;
+        }
+
+        .hero-content { position: relative; z-index: 2; text-align: center; max-width: 800px; margin: 0 auto; }
+
+        .hero-badge {
+            display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px;
+            background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 100px; font-size: 14px; font-weight: 500; color: var(--accent); margin-bottom: 24px;
+        }
+
+        .hero-title {
+            font-size: clamp(48px, 8vw, 80px); font-weight: 800; line-height: 1.1; margin-bottom: 24px;
+            background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+
+        .hero-subtitle {
+            font-size: 20px; color: var(--text-secondary); margin-bottom: 40px;
+            max-width: 600px; margin-left: auto; margin-right: auto;
+        }
+
+        .hero-cta { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-bottom: 60px; }
+
+        .btn {
+            padding: 16px 32px; border-radius: 12px; font-weight: 600; text-decoration: none;
+            transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 8px; font-size: 16px;
+        }
+
+        .btn-primary {
+            background: var(--gradient-primary); color: white; border: none;
+        }
+
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(16, 185, 129, 0.3); }
+
+        .btn-secondary {
+            background: transparent; color: var(--text-primary); border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover { background: var(--border); }
+
+        .stats {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 32px; margin-top: 80px;
+        }
+
+        .stat-item { text-align: center; }
+
+        .stat-number {
+            font-size: 48px; font-weight: 800; color: var(--accent);
+            line-height: 1; margin-bottom: 8px;
+        }
+
+        .stat-label { color: var(--text-secondary); font-size: 16px; }
+
+        .monitors {
+            padding: 120px 0; position: relative;
+        }
+
+        .section-header {
+            text-align: center; margin-bottom: 80px; max-width: 600px;
+            margin-left: auto; margin-right: auto;
+        }
+
+        .section-badge {
+            display: inline-block; padding: 6px 16px;
+            background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.2);
+            border-radius: 100px; font-size: 14px; font-weight: 500;
+            color: var(--accent-secondary); margin-bottom: 16px;
+        }
+
+        .section-title {
+            font-size: 48px; font-weight: 800; margin-bottom: 16px; color: var(--text-primary);
+        }
+
+        .section-description { font-size: 18px; color: var(--text-secondary); }
+
+        .monitors-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 32px; max-width: 900px; margin: 0 auto;
+        }
+
+        .monitor-card {
+            background: var(--bg-secondary); backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--border); border-radius: 24px; padding: 40px;
+            text-align: left; transition: all 0.3s ease; cursor: pointer; position: relative; overflow: hidden;
+        }
+
+        .monitor-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+            background: var(--gradient-primary); opacity: 0; transition: opacity 0.3s ease;
+        }
+
+        .monitor-card.selfridges::before { background: var(--gradient-secondary); }
+        .monitor-card:hover::before { opacity: 1; }
+        .monitor-card:hover { transform: translateY(-8px); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2); }
+
+        .monitor-icon {
+            width: 64px; height: 64px; border-radius: 16px; display: flex; align-items: center;
+            justify-content: center; font-size: 24px; font-weight: 800; color: white; margin-bottom: 24px;
+        }
+
+        .johnlewis-icon { background: var(--gradient-primary); }
+        .selfridges-icon { background: var(--gradient-secondary); }
+
+        .monitor-card h3 { font-size: 24px; font-weight: 700; margin-bottom: 12px; color: var(--text-primary); }
+        .monitor-card p { color: var(--text-secondary); margin-bottom: 24px; line-height: 1.6; }
+
+        .monitor-stats {
+            display: flex; justify-content: space-between; margin-bottom: 24px;
+        }
+
+        .monitor-stat { text-align: center; }
+
+        .monitor-stat-number {
+            font-size: 20px; font-weight: 700; color: var(--text-primary); line-height: 1;
+        }
+
+        .monitor-stat-label {
+            font-size: 12px; color: var(--text-muted); text-transform: uppercase;
+            letter-spacing: 0.5px; margin-top: 4px;
+        }
+
+        .monitor-status {
+            display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500;
+        }
+
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .status-active { color: var(--accent); }
+        .status-active .status-dot { background: var(--accent); }
+        .status-coming { color: var(--text-muted); }
+        .status-coming .status-dot { background: var(--text-muted); }
+
+        .features {
+            padding: 120px 0; background: var(--gradient-bg);
+        }
+
+        .features-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 40px; margin-top: 80px;
+        }
+
+        .feature-card { text-align: center; padding: 40px 24px; }
+
+        .feature-icon {
+            width: 72px; height: 72px; border-radius: 20px; background: rgba(16, 185, 129, 0.1);
+            display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 32px;
+        }
+
+        .feature-card:nth-child(2) .feature-icon { background: rgba(139, 92, 246, 0.1); }
+        .feature-card:nth-child(3) .feature-icon { background: rgba(245, 158, 11, 0.1); }
+
+        .feature-card h3 {
+            font-size: 20px; font-weight: 700; margin-bottom: 12px; color: var(--text-primary);
+        }
+
+        .feature-card p { color: var(--text-secondary); line-height: 1.6; }
+
+        .footer {
+            padding: 40px 0; border-top: 1px solid var(--border); text-align: center;
+        }
+
+        .footer p { color: var(--text-muted); font-size: 14px; }
+
+        @media (max-width: 768px) {
+            .nav { padding: 0 16px; }
+            .container { padding: 0 16px; }
+            .hero { padding: 100px 0 60px; }
+            .hero-cta { flex-direction: column; align-items: center; }
+            .btn { width: 100%; max-width: 300px; justify-content: center; }
+            .monitors-grid { grid-template-columns: 1fr; }
+            .monitor-card { padding: 32px 24px; }
+            .section-title { font-size: 36px; }
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .hero-content > * { animation: fadeInUp 0.8s ease forwards; }
+        .hero-badge { animation-delay: 0.1s; }
+        .hero-title { animation-delay: 0.2s; }
+        .hero-subtitle { animation-delay: 0.3s; }
+        .hero-cta { animation-delay: 0.4s; }
+        .stats { animation-delay: 0.5s; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <nav class="nav">
+            <a href="/" class="logo">
+                <div class="logo-icon">SS</div>
+                Sale Scout
+            </a>
+            <button class="theme-toggle" id="themeToggle">
+                <span id="themeIcon">🌙</span>
+            </button>
+        </nav>
+    </header>
+
+    <section class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <div class="hero-badge">
+                    <span>🔥</span>
+                    AI-Powered Deal Discovery
+                </div>
+                
+                <h1 class="hero-title">
+                    Find Premium Deals<br>
+                    Before They're Gone
+                </h1>
+                
+                <p class="hero-subtitle">
+                    Advanced monitoring across John Lewis, Selfridges, and more premium retailers. 
+                    Track price drops, discover recently reduced items, and never miss a deal again.
+                </p>
+                
+                <div class="hero-cta">
+                    <a href="/johnlewis" class="btn btn-primary">
+                        Start Monitoring
+                        <span>→</span>
+                    </a>
+                    <a href="#features" class="btn btn-secondary">
+                        Learn More
+                    </a>
+                </div>
+
+                <div class="stats">
+                    <div class="stat-item">
+                        <div class="stat-number">{{ (johnlewis_stats.total + selfridges_stats.total)|default(0) }}</div>
+                        <div class="stat-label">Deals Tracked</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">24/7</div>
+                        <div class="stat-label">Monitoring</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">{{ [johnlewis_stats.max_discount, selfridges_stats.max_discount]|max|round(1) }}%</div>
+                        <div class="stat-label">Max Discount</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="monitors">
+        <div class="container">
+            <div class="section-header">
+                <div class="section-badge">Premium Retailers</div>
+                <h2 class="section-title">Choose Your Monitor</h2>
+                <p class="section-description">
+                    Each monitor is specifically tuned for different retailers, tracking their unique pricing patterns and deal structures.
+                </p>
+            </div>
+
+            <div class="monitors-grid">
+                <div class="monitor-card johnlewis" onclick="window.location.href='/johnlewis'">
+                    <div class="monitor-icon johnlewis-icon">JL</div>
+                    <h3>John Lewis</h3>
+                    <p>Premium department store deals across home, fashion, tech, and more. Track seasonal sales, clearance items, and exclusive member offers.</p>
+                    
+                    <div class="monitor-stats">
+                        <div class="monitor-stat">
+                            <div class="monitor-stat-number">{{ selfridges_stats.recently_reduced }}</div>
+                            <div class="monitor-stat-label">Recently Reduced</div>
+                        </div>
+                    </div>
+
+                    <div class="monitor-status status-active">
+                        <div class="status-dot"></div>
+                        Active Monitor
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="features" id="features">
+        <div class="container">
+            <div class="section-header">
+                <div class="section-badge">Features</div>
+                <h2 class="section-title">Built for Deal Hunters</h2>
+                <p class="section-description">
+                    Advanced algorithms and real-time monitoring ensure you never miss a premium deal.
+                </p>
+            </div>
+
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3>Smart Price Tracking</h3>
+                    <p>AI-powered algorithms detect price patterns and highlight recently reduced items before they sell out.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Real-Time Updates</h3>
+                    <p>Live monitoring every 30 minutes ensures you're always seeing the latest deals and stock availability.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🔍</div>
+                    <h3>Advanced Filtering</h3>
+                    <p>Filter by category, size, discount percentage, and more to find exactly what you're looking for.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <p>© 2024 Sale Scout. Created by the original Resoled™</p>
+        </div>
+    </footer>
+
+    <script>
+        const themeToggle = document.getElementById('themeToggle');
+        const themeIcon = document.getElementById('themeIcon');
+        const body = document.body;
+
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) {
+            body.classList.toggle('light-mode', savedTheme === 'light');
+            themeIcon.textContent = savedTheme === 'light' ? '☀️' : '🌙';
+        }
+
+        themeToggle.addEventListener('click', () => {
+            body.classList.toggle('light-mode');
+            const isLight = body.classList.contains('light-mode');
+            themeIcon.textContent = isLight ? '☀️' : '🌙';
+            localStorage.setItem('theme', isLight ? 'light' : 'dark');
+        });
+
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelector(this.getAttribute('href')).scrollIntoView({
+                    behavior: 'smooth'
+                });
+            });
+        });
+
+        let lastScrollY = window.scrollY;
+        window.addEventListener('scroll', () => {
+            const header = document.querySelector('.header');
+            if (window.scrollY > 100) {
+                header.style.background = body.classList.contains('light-mode') 
+                    ? 'rgba(255, 255, 255, 0.95)' 
+                    : 'rgba(10, 14, 26, 0.95)';
+            } else {
+                header.style.background = body.classList.contains('light-mode') 
+                    ? 'rgba(255, 255, 255, 0.8)' 
+                    : 'rgba(10, 14, 26, 0.8)';
+            }
+        });
+    </script>
+</body>
+</html>{{ johnlewis_stats.total }}</div>
+                            <div class="monitor-stat-label">Active Deals</div>
+                        </div>
+                        <div class="monitor-stat">
+                            <div class="monitor-stat-number">{{ johnlewis_stats.max_discount|round(1) }}%</div>
+                            <div class="monitor-stat-label">Max Discount</div>
+                        </div>
+                        <div class="monitor-stat">
+                            <div class="monitor-stat-number">{{ johnlewis_stats.recently_reduced }}</div>
+                            <div class="monitor-stat-label">Recently Reduced</div>
+                        </div>
+                    </div>
+
+                    <div class="monitor-status status-active">
+                        <div class="status-dot"></div>
+                        Active Monitor
+                    </div>
+                </div>
+
+                <div class="monitor-card selfridges" onclick="window.location.href='/selfridges'">
+                    <div class="monitor-icon selfridges-icon">S</div>
+                    <h3>Selfridges</h3>
+                    <p>Luxury fashion and lifestyle deals from the world's most prestigious brands. Track designer sales, limited-time offers, and exclusive collections.</p>
+                    
+                    <div class="monitor-stats">
+                        <div class="monitor-stat">
+                            <div class="monitor-stat-number">{{ selfridges_stats.total }}</div>
+                            <div class="monitor-stat-label">Active Deals</div>
+                        </div>
+                        <div class="monitor-stat">
+                            <div class="monitor-stat-number">{{ selfridges_stats.max_discount|round(1) }}%</div>
+                            <div class="monitor-stat-label">Max Discount</div>
+                        </div>
+                        <div class="monitor-stat">
+                            <div class="monitor-stat-number">
