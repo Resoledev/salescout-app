@@ -9,6 +9,8 @@
     --danger: #ef4444;
     --gradient: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(99, 102, 241, 0.2) 100%);
     --glass-blur: blur(20px);
+    --recently-reduced: #ff6b35;
+    --recently-reduced-bg: rgba(255, 107, 53, 0.1);
 }
 
 body.light-mode {
@@ -21,6 +23,8 @@ body.light-mode {
     --success: #28a745;
     --danger: #dc3545;
     --gradient: linear-gradient(135deg, rgba(212, 160, 23, 0.2) 0%, rgba(99, 102, 241, 0.2) 100%);
+    --recently-reduced: #ff4500;
+    --recently-reduced-bg: rgba(255, 69, 0, 0.1);
 }
 
 body {
@@ -33,7 +37,6 @@ body {
     overflow-x: hidden;
 }
 
-/* Global button reset for visibility */
 button, .btn {
     color: var(--text-primary) !important;
     background-color: rgba(16, 185, 129, 0.1) !important;
@@ -241,7 +244,7 @@ button, .btn {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 20px;
-    max-width: 800px;
+    max-width: 1000px;
     margin: 20px auto;
     padding: 0 20px;
 }
@@ -360,7 +363,6 @@ button, .btn {
     background: rgba(0, 0, 0, 0.1);
 }
 
-/* Pill-style select inputs for category, size, sort, and per-page */
 .category-input, .size-input, .sort-input, .per-page-input {
     -webkit-appearance: none;
     appearance: none;
@@ -405,21 +407,20 @@ button, .btn {
     box-shadow: 0 6px 20px rgba(212,160,23,0.12);
 }
 
-/* Cards */
 .deals-grid {
     display: grid;
     gap: 20px;
     position: relative;
-    min-height: 200px; /* Ensure space for spinner */
+    min-height: 200px;
 }
 
 .deals-grid.loading .deal-card,
 .deals-grid.loading .empty {
-    display: none; /* Hide cards and empty state during loading */
+    display: none;
 }
 
 .deals-grid .loading-spinner {
-    display: none; /* Hidden by default */
+    display: none;
     width: 48px;
     height: 48px;
     margin: 40px auto;
@@ -434,7 +435,7 @@ button, .btn {
 }
 
 .deals-grid.loading .loading-spinner {
-    display: block; /* Show spinner only when loading */
+    display: block;
 }
 
 .deal-card {
@@ -450,6 +451,45 @@ button, .btn {
     grid-template-columns: 120px 1fr 180px;
     gap: 15px;
     align-items: center;
+    position: relative;
+}
+
+.deal-card.recently-reduced {
+    border: 2px solid var(--recently-reduced);
+    background: var(--recently-reduced-bg);
+    box-shadow: 0 0 20px rgba(255, 107, 53, 0.2);
+}
+
+.deal-card.recently-reduced::before {
+    content: '🔥 HOT DEAL';
+    position: absolute;
+    top: -10px;
+    right: 15px;
+    background: linear-gradient(135deg, var(--recently-reduced) 0%, #ff4500 100%);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    z-index: 1;
+    box-shadow: 0 2px 8px rgba(255, 107, 53, 0.3);
+}
+
+.recently-reduced-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, var(--recently-reduced) 0%, #ff4500 100%);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 8px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-left: 8px;
+    vertical-align: middle;
+    box-shadow: 0 1px 3px rgba(255, 107, 53, 0.3);
 }
 
 .deal-card:nth-child(1) { animation-delay: 0.1s; }
@@ -466,8 +506,16 @@ button, .btn {
     box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
 }
 
+.deal-card.recently-reduced:hover {
+    box-shadow: 0 6px 25px rgba(255, 107, 53, 0.4);
+}
+
 .light-mode .deal-card:hover {
     box-shadow: 0 4px 12px rgba(212, 160, 23, 0.2);
+}
+
+.light-mode .deal-card.recently-reduced:hover {
+    box-shadow: 0 6px 25px rgba(255, 69, 0, 0.4);
 }
 
 .image-placeholder {
@@ -536,7 +584,6 @@ button, .btn {
 .status-in { color: var(--success); font-weight: bold; }
 .status-out { color: var(--danger); font-weight: bold; }
 
-/* Large right-side action button */
 .deal-action {
     display: flex;
     align-items: center;
@@ -557,9 +604,19 @@ button, .btn {
     transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s;
 }
 
+.recently-reduced .btn-view {
+    background: linear-gradient(135deg, var(--recently-reduced) 0%, #ff4500 100%);
+    box-shadow: 0 6px 18px rgba(255, 107, 53, 0.2);
+}
+
 .light-mode .btn-view {
     background: linear-gradient(135deg, rgba(212,160,23,1) 0%, rgba(99,102,241,1) 100%);
     box-shadow: 0 6px 18px rgba(212,160,23,0.12);
+}
+
+.light-mode .recently-reduced .btn-view {
+    background: linear-gradient(135deg, var(--recently-reduced) 0%, #ff4500 100%);
+    box-shadow: 0 6px 18px rgba(255, 69, 0, 0.2);
 }
 
 .btn-view:hover {
@@ -567,11 +624,18 @@ button, .btn {
     box-shadow: 0 10px 30px rgba(16,185,129,0.18);
 }
 
+.recently-reduced .btn-view:hover {
+    box-shadow: 0 10px 30px rgba(255, 107, 53, 0.3);
+}
+
 .light-mode .btn-view:hover {
     box-shadow: 0 10px 30px rgba(212,160,23,0.18);
 }
 
-/* Favorite button: Darker bg for better contrast, white text */
+.light-mode .recently-reduced .btn-view:hover {
+    box-shadow: 0 10px 30px rgba(255, 69, 0, 0.3);
+}
+
 .btn-favorite {
     padding: 8px 12px;
     background: rgba(16, 185, 129, 0.1);
@@ -653,7 +717,6 @@ footer {
     pointer-events: none;
 }
 
-/* Pagination styling */
 .pagination {
     display: flex;
     justify-content: center;
@@ -684,7 +747,158 @@ footer {
     font-weight: 600;
 }
 
-/* Mobile adjustments for deal cards and other elements */
+}
+
+/* NEW: Multi-monitor home page styling */
+.monitor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 30px;
+    max-width: 800px;
+    margin: 40px auto;
+    padding: 0 20px;
+}
+
+.monitor-card {
+    background: var(--bg-secondary);
+    backdrop-filter: var(--glass-blur);
+    border-radius: 16px;
+    padding: 30px;
+    border: 1px solid var(--border);
+    transition: transform 0.3s, box-shadow 0.3s, border-color 0.3s;
+    cursor: pointer;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.monitor-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--gradient);
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 1;
+}
+
+.monitor-card:hover::before {
+    opacity: 0.1;
+}
+
+.monitor-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 12px 40px rgba(16, 185, 129, 0.2);
+    border-color: var(--accent);
+}
+
+.light-mode .monitor-card:hover {
+    box-shadow: 0 12px 40px rgba(212, 160, 23, 0.2);
+}
+
+.monitor-card > * {
+    position: relative;
+    z-index: 2;
+}
+
+.monitor-icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    margin: 0 auto 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    font-weight: 800;
+    color: white;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.johnlewis-theme {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.selfridges-theme {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+}
+
+.monitor-card h3 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin: 0 0 10px;
+    color: var(--text-primary);
+}
+
+.monitor-card p {
+    color: var(--text-secondary);
+    margin: 0 0 20px;
+    font-size: 1rem;
+}
+
+.monitor-status {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.monitor-status.active {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--success);
+    border: 1px solid var(--success);
+}
+
+.monitor-status.coming-soon {
+    background: rgba(156, 163, 175, 0.2);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+/* NEW: Header navigation for monitor pages */
+.header-nav {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.nav-link {
+    color: var(--text-primary);
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    font-weight: 500;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.nav-link:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+
+/* NEW: Monitor-specific theming */
+body[data-monitor="selfridges"] {
+    --accent: #8b5cf6;
+    --success: #8b5cf6;
+    --gradient: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(124, 58, 237, 0.2) 100%);
+    --recently-reduced: #f59e0b;
+    --recently-reduced-bg: rgba(245, 158, 11, 0.1);
+}
+
+body[data-monitor="selfridges"] .light-mode {
+    --accent: #7c3aed;
+    --recently-reduced: #f59e0b;
+    --recently-reduced-bg: rgba(245, 158, 11, 0.1);
+}
+
 @media (max-width: 768px) {
     .deal-card {
         grid-template-columns: 1fr;
@@ -715,5 +929,18 @@ footer {
     .search-filter-bar {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .recently-reduced-badge {
+        font-size: 0.6rem;
+        padding: 1px 6px;
+        margin-left: 4px;
+    }
+
+    .deal-card.recently-reduced::before {
+        font-size: 0.6rem;
+        padding: 2px 8px;
+        right: 10px;
+        top: -8px;
     }
 }
