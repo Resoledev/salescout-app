@@ -1,548 +1,771 @@
-import csv
-import os
-import re
-import traceback
-import ast
-from flask import Flask, render_template_string, request, make_response
-from datetime import datetime
-import json
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sale Scout - AI-Powered Deal Discovery Across Premium Retailers</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: rgba(26, 31, 46, 0.8);
+            --accent: #10b981;
+            --accent-secondary: #8b5cf6;
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.7);
+            --text-muted: rgba(255, 255, 255, 0.5);
+            --border: rgba(255, 255, 255, 0.1);
+            --gradient-primary: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            --gradient-secondary: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+            --gradient-bg: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+            --glass-blur: blur(20px);
+        }
 
-app = Flask(__name__)
+        body.light-mode {
+            --bg-primary: #ffffff;
+            --bg-secondary: rgba(255, 255, 255, 0.9);
+            --accent: #059669;
+            --accent-secondary: #7c3aed;
+            --text-primary: #1a1a1a;
+            --text-secondary: rgba(0, 0, 0, 0.7);
+            --text-muted: rgba(0, 0, 0, 0.5);
+            --border: rgba(0, 0, 0, 0.1);
+            --gradient-bg: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%);
+        }
 
-# NEW: Multi-monitor configuration
-MONITORS = {
-    'johnlewis': {
-        'name': 'John Lewis',
-        'csv_file': os.environ.get("JOHNLEWIS_CSV", "/opt/render/project/src/johnlewisv2.csv"),
-        'price_history_file': os.path.join(os.path.dirname(os.environ.get("JOHNLEWIS_CSV", "/opt/render/project/src/johnlewisv2.csv")), 'state', 'price_history.json'),
-        'color_scheme': 'emerald',  # Green theme
-        'logo': 'https://i.ibb.co/60C5BBMV/Pegasus-removebg-preview.png'
-    },
-    'selfridges': {
-        'name': 'Selfridges',
-        'csv_file': os.environ.get("SELFRIDGES_CSV", "/opt/render/project/src/selfridges.csv"),
-        'price_history_file': os.path.join(os.path.dirname(os.environ.get("SELFRIDGES_CSV", "/opt/render/project/src/selfridges.csv")), 'state', 'selfridges_price_history.json'),
-        'color_scheme': 'purple',  # Purple theme
-        'logo': 'https://i.ibb.co/60C5BBMV/Pegasus-removebg-preview.png'  # Replace with Selfridges logo when ready
-    }
-}
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-def load_price_history(monitor):
-    """Load price history from file for specific monitor."""
-    price_history_file = MONITORS[monitor]['price_history_file']
-    try:
-        with open(price_history_file, 'r') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
 
-def is_recently_reduced(product_id, monitor):
-    """Check if a product is recently reduced based on price history."""
-    price_history = load_price_history(monitor)
-    return price_history.get(product_id, {}).get("recently_reduced", False)
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
 
-def _extract_image_from_row(row):
-    """Handle cases where CSV has more fields than headers."""
-    image_val = row.get("Image")
-    if image_val:
-        return str(image_val).strip()
+        /* Header */
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            backdrop-filter: var(--glass-blur);
+            border-bottom: 1px solid var(--border);
+            background: rgba(10, 14, 26, 0.8);
+        }
 
-    extra = row.get(None)
-    if extra:
-        if isinstance(extra, list):
-            return str(extra[0]).strip() if extra else ""
-        return str(extra).strip()
-    return ""
+        .light-mode .header {
+            background: rgba(255, 255, 255, 0.8);
+        }
 
-def _clean_sizes_field(sizes_value, category):
-    """Normalize the Sizes field into a comma-separated human-readable list."""
-    if not sizes_value:
-        return "N/A", [], []
+        .nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 80px;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
 
-    cleaned = sizes_value
-    try:
-        if isinstance(sizes_value, str) and sizes_value.strip().startswith('[') and sizes_value.strip().endswith(']'):
-            parsed = ast.literal_eval(sizes_value)
-            if isinstance(parsed, (list, tuple)):
-                cleaned = ", ".join(str(x).strip() for x in parsed)
-    except Exception:
-        cleaned = sizes_value
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--text-primary);
+            text-decoration: none;
+        }
 
-    if isinstance(cleaned, (list, tuple)):
-        cleaned = ", ".join(str(x).strip() for x in cleaned)
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--gradient-primary);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: white;
+        }
 
-    cleaned = str(cleaned).strip()
-    tokens = [t.strip() for t in re.split(r',\s*|\s*;\s*', cleaned) if t.strip()]
-    available = []
-    filterable_sizes = []
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
 
-    shoe_sizes = {'uk 5', 'uk 6', 'uk 7', 'uk 8', 'uk 9', 'uk 10', 'eu 38', 'eu 39', 'eu 40', 'eu 41', 'eu 42', 'eu 43'}
-    clothing_sizes = {'extra small', 'small', 'medium', 'large', 'extra large', 'one size'}
-    other_sizes = {'one size'}
+        .theme-toggle {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
 
-    for t in tokens:
-        tl = t.lower()
-        if "currently unavailable" in tl:
-            continue
-        t_clean = re.sub(r'(?i)\s*currently\s*unavailable', '', t).strip()
-        if t_clean:
-            available.append(t_clean)
-            size_lower = t_clean.lower()
-            if category.lower() in ["boots", "shoes"]:
-                if size_lower in shoe_sizes or re.match(r'^(uk|eu)\s*\d+(\.\d)?$', size_lower):
-                    filterable_sizes.append(t_clean)
-            elif category.lower() == "john lewis branded":
-                if size_lower in clothing_sizes:
-                    filterable_sizes.append(t_clean.title() if size_lower != "one size" else "One Size")
-            else:
-                if size_lower in other_sizes:
-                    filterable_sizes.append("One Size")
+        .theme-toggle:hover {
+            background: var(--border);
+            color: var(--text-primary);
+        }
 
-    if not available:
-        for t in tokens:
-            if t.lower().strip() == "one size":
-                available = ["One Size"]
-                filterable_sizes = ["One Size"]
-                break
+        /* Hero Section */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            position: relative;
+            padding: 120px 0 80px;
+            background: var(--gradient-bg);
+        }
 
-    available_str = ", ".join(available) if available else "N/A"
-    return cleaned, available, list(set(filterable_sizes))
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(600px circle at 50% 0%, rgba(16, 185, 129, 0.1), transparent 50%);
+            pointer-events: none;
+        }
 
-def load_deals(monitor, search_query="", category_filter=None, size_filter=None, 
-              sort_by=None, page=1, per_page=50):
-    """Load deals from CSV with pagination and sort by specified criterion."""
-    deals = []
-    errors = []
-    csv_file = MONITORS[monitor]['csv_file']
-    print(f"Attempting to load CSV from: {csv_file}")
+        .hero-content {
+            position: relative;
+            z-index: 2;
+            text-align: center;
+            max-width: 800px;
+            margin: 0 auto;
+        }
 
-    if not os.path.exists(csv_file):
-        print("CSV file not found.")
-        errors.append(f"CSV file not found at {csv_file}")
-        return deals, errors, 0, 1
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 100px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--accent);
+            margin-bottom: 24px;
+        }
 
-    try:
-        file_size = os.path.getsize(csv_file)
-        print(f"CSV file size: {file_size} bytes")
+        .hero-title {
+            font-size: clamp(48px, 8vw, 80px);
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 24px;
+            background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
 
-        with open(csv_file, 'r', encoding='utf-8-sig', errors='replace') as csvfile:
-            try:
-                csvfile.locking = False
-            except Exception as e:
-                print(f"Warning: couldn't handle lock: {e}")
+        .hero-subtitle {
+            font-size: 20px;
+            color: var(--text-secondary);
+            margin-bottom: 40px;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
 
-            reader = csv.DictReader(csvfile)
-            original_headers = [h.strip() for h in reader.fieldnames] if reader.fieldnames else []
-            headers = original_headers.copy()
-            if 'Name' in headers and 'Product Name' not in headers:
-                headers[headers.index('Name')] = 'Product Name'
-            if 'Discount (%)' in headers and 'Discount' not in headers:
-                headers[headers.index('Discount (%)')] = 'Discount'
-            reader.fieldnames = headers
-            missing_headers = [h for h in ['Product Name', 'Current Price', 'Original Price', 'Discount',
-                                          'Stock Status', 'Sizes', 'URL', 'Event Type', 'Timestamp', 'Category']
-                              if h not in headers]
-            if missing_headers:
-                warn_msg = f"Warning: Missing expected headers: {missing_headers}. Attempting to continue."
-                print(warn_msg)
-                errors.append(warn_msg)
+        .hero-cta {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 60px;
+        }
 
-            row_count = 0
-            for row in reader:
-                row_count += 1
+        .btn {
+            padding: 16px 32px;
+            border-radius: 12px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 16px;
+        }
 
-                if 'Name' in row and not row.get('Product Name'):
-                    row['Product Name'] = row.pop('Name')
+        .btn-primary {
+            background: var(--gradient-primary);
+            color: white;
+            border: none;
+        }
 
-                img = _extract_image_from_row(row)
-                row['Image'] = img or row.get('Image', '') or ''
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(16, 185, 129, 0.3);
+        }
 
-                sizes_value = row.get('Sizes', 'N/A') or 'N/A'
-                try:
-                    if isinstance(sizes_value, str) and sizes_value.strip().startswith('[') and sizes_value.strip().endswith(']'):
-                        parsed = ast.literal_eval(sizes_value)
-                        if isinstance(parsed, (list, tuple)):
-                            sizes_value = ", ".join(str(x).strip() for x in parsed)
-                except Exception as e:
-                    errors.append(f"Row {row_count}: Sizes parse error - {e}")
-                    sizes_value = 'N/A'
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
 
-                row = {k: (re.sub(r'""', '"', v).strip() if isinstance(v, str) else v) for k, v in row.items()}
+        .btn-secondary:hover {
+            background: var(--border);
+        }
 
-                if not row.get('Product Name', '').strip():
-                    errors.append(f"Row {row_count}: Skipped due to empty Product Name")
-                    continue
+        /* Stats Section */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 32px;
+            margin-top: 80px;
+        }
 
-                try:
-                    current_price_raw = row.get('Current Price', '')
-                    current_price = float(current_price_raw) if (current_price_raw and current_price_raw != 'N/A') else None
-                except (ValueError, TypeError):
-                    current_price = None
+        .stat-item {
+            text-align: center;
+        }
 
-                try:
-                    original_price_raw = row.get('Original Price', '')
-                    original_price = float(original_price_raw) if (original_price_raw and original_price_raw != 'N/A') else None
-                except (ValueError, TypeError):
-                    original_price = None
+        .stat-number {
+            font-size: 48px;
+            font-weight: 800;
+            color: var(--accent);
+            line-height: 1;
+            margin-bottom: 8px;
+        }
 
-                discount = 0.0
-                discount_str = row.get('Discount', '') or row.get('Discount (%)', '') or ''
-                if discount_str and discount_str != 'N/A':
-                    m = re.search(r'(\d+\.?\d*)', str(discount_str))
-                    if m:
-                        try:
-                            discount = float(m.group(1))
-                        except Exception:
-                            discount = 0.0
-                if (discount == 0.0 or discount is None) and (current_price is not None and original_price is not None and original_price != 0):
-                    try:
-                        calculated_discount = (1 - (current_price / original_price)) * 100
-                        discount = max(0.0, min(100.0, calculated_discount))
-                    except Exception:
-                        pass
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 16px;
+        }
 
-                category = row.get('Category', 'Other').strip()
-                cleaned_sizes_str, available_sizes_list, filterable_sizes = _clean_sizes_field(sizes_value, category)
-                row['Sizes'] = cleaned_sizes_str
-                available_sizes_str = ", ".join(available_sizes_list) if available_sizes_list else "N/A"
+        /* Monitors Section */
+        .monitors {
+            padding: 120px 0;
+            position: relative;
+        }
 
-                stock_status = row.get('Stock Status', '').strip() or "Unknown"
-                if available_sizes_list:
-                    stock_status = "In Stock"
-                elif stock_status.lower() in ["in stock", "out of stock", "not listed"]:
-                    stock_status = stock_status.title()
-                else:
-                    stock_status = "Out of Stock"
+        .section-header {
+            text-align: center;
+            margin-bottom: 80px;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
 
-                # NEW: Check if product is recently reduced
-                product_id = row.get('Product ID', '')
-                is_recent_reduction = False
-                
-                # Check price history first
-                if product_id:
-                    is_recent_reduction = is_recently_reduced(product_id, monitor)
-                
-                # Also check CSV Recently Reduced column if it exists
-                csv_recently_reduced = row.get('Recently Reduced', '').lower() == 'yes'
-                is_recent_reduction = is_recent_reduction or csv_recently_reduced
+        .section-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            background: rgba(139, 92, 246, 0.1);
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            border-radius: 100px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--accent-secondary);
+            margin-bottom: 16px;
+        }
 
-                deal = {
-                    "Product ID": product_id,
-                    "Product Name": row.get('Product Name', '').strip(),
-                    "Current Price": current_price,
-                    "Original Price": original_price,
-                    "Discount": discount,
-                    "Stock Status": stock_status,
-                    "Sizes": row.get("Sizes", "N/A").strip(),
-                    "Available Sizes": available_sizes_str,
-                    "Filterable Sizes": filterable_sizes,
-                    "URL": row.get("URL", "#").strip(),
-                    "Event Type": row.get("Event Type", "N/A").strip().capitalize(),
-                    "Timestamp": row.get("Timestamp", "N/A").strip(),
-                    "Image": row.get("Image", "").strip(),
-                    "Category": category,
-                    "Recently Reduced": is_recent_reduction
-                }
+        .section-title {
+            font-size: 48px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+        }
 
-                if search_query and search_query.lower() not in deal["Product Name"].lower():
-                    continue
-                if category_filter and deal["Category"].lower() != category_filter.lower():
-                    continue
-                if size_filter and size_filter.lower() not in [s.lower() for s in deal["Filterable Sizes"]]:
-                    continue
+        .section-description {
+            font-size: 18px;
+            color: var(--text-secondary);
+        }
 
-                deals.append(deal)
+        .monitors-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 32px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
 
-            if sort_by == "net_reduction":
-                deals.sort(key=lambda x: (x['Original Price'] or 0) - (x['Current Price'] or 0) if x['Original Price'] and x['Current Price'] else 0, reverse=True)
-            elif sort_by == "price":
-                deals.sort(key=lambda x: x['Current Price'] or float('inf'))
-            elif sort_by == "timestamp":
-                deals.sort(key=lambda x: datetime.strptime(x['Timestamp'], '%Y-%m-%d %H:%M:%S') if x['Timestamp'] != 'N/A' else datetime.min, reverse=True)
-            elif sort_by == "recently_reduced":
-                deals.sort(key=lambda x: (x['Recently Reduced'], x['Discount'] or 0), reverse=True)
-            else:
-                deals.sort(key=lambda x: x['Discount'] or 0, reverse=True)
+        .monitor-card {
+            background: var(--bg-secondary);
+            backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 40px;
+            text-align: left;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
 
-            total_deals = len(deals)
-            start_idx = (page - 1) * per_page
-            end_idx = min(start_idx + per_page, total_deals)
-            paginated_deals = deals[start_idx:end_idx]
+        .monitor-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--gradient-primary);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
 
-            print(f"Loaded {len(paginated_deals)} deals (page {page} of {max(1, (total_deals + per_page - 1) // per_page)}) from CSV after filters.")
-    except Exception as e:
-        print(f"Error loading CSV: {e}")
-        print(f"Traceback: {traceback.format_exc()}")
-        errors.append(f"Error loading CSV: {e}")
+        .monitor-card.selfridges::before {
+            background: var(--gradient-secondary);
+        }
 
-    total_pages = max(1, (len(deals) + per_page - 1) // per_page)
-    return paginated_deals, errors, total_deals, total_pages
+        .monitor-card:hover::before {
+            opacity: 1;
+        }
 
-@app.route('/')
-def home():
-    """Multi-monitor home page with tabs."""
-    template = """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Sale Scout - Multi Monitor Dashboard</title>
-        <link rel="stylesheet" href="/static/style.css">
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    </head>
-    <body>
-        <div class="header">
-            <img src="https://i.ibb.co/60C5BBMV/Pegasus-removebg-preview.png" alt="Sale Scout Logo" class="logo">
-            <div class="header-title">
-                <h2>Sale Scout</h2>
-                <h3>Multi-Store Monitoring</h3>
-                <p class="tagline">Acquiring Deals Across Multiple Retailers</p>
-            </div>
-            <button class="theme-toggle" aria-label="Toggle dark/light mode">
-                <span class="theme-icon">🌙</span>
-            </button>
-        </div>
-        <div class="container">
-            <div class="monitor-grid">
-                <div class="monitor-card" onclick="window.location.href='/johnlewis'">
-                    <div class="monitor-icon johnlewis-theme">JL</div>
-                    <h3>John Lewis</h3>
-                    <p>Premium department store deals</p>
-                    <div class="monitor-status active">Active Monitor</div>
-                </div>
-                <div class="monitor-card" onclick="window.location.href='/selfridges'">
-                    <div class="monitor-icon selfridges-theme">S</div>
-                    <h3>Selfridges</h3>
-                    <p>Luxury fashion & lifestyle deals</p>
-                    <div class="monitor-status coming-soon">Coming Soon</div>
-                </div>
-            </div>
-        </div>
-        <footer>Created by the original Resoled™</footer>
-        <canvas id="stars-canvas"></canvas>
-        <script src="/static/script.js"></script>
-    </body>
-    </html>
-    """
-    return render_template_string(template)
+        .monitor-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+        }
 
-@app.route('/<monitor>', methods=['GET', 'POST'])
-def monitor_page(monitor):
-    """Individual monitor page."""
-    if monitor not in MONITORS:
-        return "Monitor not found", 404
-    
-    monitor_config = MONITORS[monitor]
-    
-    filter_in_stock = request.form.get('filter_in_stock') == 'on'
-    search_query = request.form.get('search_query', '')
-    category_filter = request.form.get('category_filter', '')
-    size_filter = request.form.get('size_filter', '')
-    sort_by = request.form.get('sort_by', '')
-    recently_reduced_filter = request.form.get('recently_reduced_filter') == 'on'
-    page = int(request.args.get('page', 1))
-    per_page = int(request.args.get('per_page', 50))
-    
-    deals, errors, total_deals, total_pages = load_deals(
-        monitor, search_query, category_filter, 
-        size_filter, sort_by, page, per_page
-    )
-    
-    num_deals = len(deals)
-    last_updated = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    cache_bust = f"?v={int(datetime.now().timestamp())}"
+        .monitor-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: 800;
+            color: white;
+            margin-bottom: 24px;
+        }
 
-    all_sizes = set()
-    for deal in deals:
-        if not category_filter or deal["Category"].lower() == category_filter.lower():
-            for size in deal["Filterable Sizes"]:
-                all_sizes.add(size)
-    size_options = sorted(all_sizes, key=lambda x: x if x not in ["Other", "One Size"] else "Z")
+        .johnlewis-icon {
+            background: var(--gradient-primary);
+        }
 
-    recently_reduced_count = sum(1 for deal in deals if deal.get("Recently Reduced", False))
+        .selfridges-icon {
+            background: var(--gradient-secondary);
+        }
 
-    template = """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Sale Scout - {{ monitor_name }} Deals</title>
-        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-        <meta http-equiv="Pragma" content="no-cache">
-        <meta http-equiv="Expires" content="0">
-        <link rel="stylesheet" href="/static/style.css{{ cache_bust }}">
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap{{ cache_bust }}" rel="stylesheet">
-    </head>
-    <body data-monitor="{{ monitor }}">
-        <div class="header">
-            <img src="{{ logo }}" alt="{{ monitor_name }} Logo" class="logo">
-            <div class="header-title">
-                <h2>Sale Scout</h2>
-                <h3>{{ monitor_name }} Deals</h3>
-                <p class="tagline">Acquiring Deals</p>
-                <p>Last updated: {{ last_updated }} | Auto-refreshing every 30m <span class="spinner"></span> | Found {{ total_deals }} deals</p>
-            </div>
-            <div class="header-nav">
-                <a href="/" class="nav-link">← All Monitors</a>
-                <button class="theme-toggle" aria-label="Toggle dark/light mode">
-                    <span class="theme-icon">🌙</span>
+        .monitor-card h3 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+        }
+
+        .monitor-card p {
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+
+        .monitor-stats {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }
+
+        .monitor-stat {
+            text-align: center;
+        }
+
+        .monitor-stat-number {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1;
+        }
+
+        .monitor-stat-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
+        }
+
+        .monitor-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .status-active {
+            color: var(--accent);
+        }
+
+        .status-active .status-dot {
+            background: var(--accent);
+        }
+
+        .status-coming {
+            color: var(--text-muted);
+        }
+
+        .status-coming .status-dot {
+            background: var(--text-muted);
+        }
+
+        /* Features Section */
+        .features {
+            padding: 120px 0;
+            background: var(--gradient-bg);
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 40px;
+            margin-top: 80px;
+        }
+
+        .feature-card {
+            text-align: center;
+            padding: 40px 24px;
+        }
+
+        .feature-icon {
+            width: 72px;
+            height: 72px;
+            border-radius: 20px;
+            background: rgba(16, 185, 129, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            font-size: 32px;
+        }
+
+        .feature-card:nth-child(2) .feature-icon {
+            background: rgba(139, 92, 246, 0.1);
+        }
+
+        .feature-card:nth-child(3) .feature-icon {
+            background: rgba(245, 158, 11, 0.1);
+        }
+
+        .feature-card h3 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        /* Footer */
+        .footer {
+            padding: 40px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .footer p {
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        /* Mobile Responsiveness */
+        @media (max-width: 768px) {
+            .nav {
+                padding: 0 16px;
+            }
+
+            .container {
+                padding: 0 16px;
+            }
+
+            .hero {
+                padding: 100px 0 60px;
+            }
+
+            .hero-cta {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .btn {
+                width: 100%;
+                max-width: 300px;
+                justify-content: center;
+            }
+
+            .monitors-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .monitor-card {
+                padding: 32px 24px;
+            }
+
+            .section-title {
+                font-size: 36px;
+            }
+        }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .hero-content > * {
+            animation: fadeInUp 0.8s ease forwards;
+        }
+
+        .hero-badge { animation-delay: 0.1s; }
+        .hero-title { animation-delay: 0.2s; }
+        .hero-subtitle { animation-delay: 0.3s; }
+        .hero-cta { animation-delay: 0.4s; }
+        .stats { animation-delay: 0.5s; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <nav class="nav">
+            <a href="/" class="logo">
+                <div class="logo-icon">SS</div>
+                Sale Scout
+            </a>
+            <div class="nav-actions">
+                <button class="theme-toggle" id="themeToggle">
+                    <span id="themeIcon">🌙</span>
                 </button>
             </div>
-        </div>
-        <div class="stats-hero">
-            <div class="stat-card">
-                <div class="stat-icon"></div>
-                <h2 class="stat-number">{{ total_deals }}</h2>
-                <p class="stat-label">Active Deals</p>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon"></div>
-                <h2 class="stat-number">{{ "%.1f"|format((deals|map(attribute='Discount')|max) if deals else 0) }}%</h2>
-                <p class="stat-label">Max Discount</p>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon"></div>
-                <h2 class="stat-number">{{ recently_reduced_count }}</h2>
-                <p class="stat-label">Recently Reduced</p>
-            </div>
-        </div>
+        </nav>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
         <div class="container">
-            <form class="search-filter-bar" method="POST" action="/{{ monitor }}?per_page={{ per_page }}">
-                <input type="text" name="search_query" class="search-input" placeholder="Search deals by name..." value="{{ search_query }}">
-                <div class="filter-bar">
-                    <select name="category_filter" class="category-input">
-                        <option value="">All Categories</option>
-                        <option value="john lewis branded" {% if category_filter == 'john lewis branded' %}selected{% endif %}>John Lewis Branded</option>
-                        <option value="boots" {% if category_filter == 'boots' %}selected{% endif %}>Boots</option>
-                    </select>
-                    <select name="size_filter" class="size-input">
-                        <option value="">All Sizes</option>
-                        {% for size in size_options %}
-                            <option value="{{ size }}" {% if size_filter == size %}selected{% endif %}>{{ size }}</option>
-                        {% endfor %}
-                    </select>
-                    <select name="sort_by" class="sort-input">
-                        <option value="discount" {% if not sort_by or sort_by == 'discount' %}selected{% endif %}>Sort By: Discount (High to Low)</option>
-                        <option value="recently_reduced" {% if sort_by == 'recently_reduced' %}selected{% endif %}>Sort By: Recently Reduced First</option>
-                        <option value="net_reduction" {% if sort_by == 'net_reduction' %}selected{% endif %}>Sort By: Net Reduction (High to Low)</option>
-                        <option value="price" {% if sort_by == 'price' %}selected{% endif %}>Sort By: Price (Low to High)</option>
-                        <option value="timestamp" {% if sort_by == 'timestamp' %}selected{% endif %}>Sort By: Newest First</option>
-                    </select>
-                    <select name="per_page" class="per-page-input">
-                        <option value="50" {% if per_page == 50 %}selected{% endif %}>50 per page</option>
-                        <option value="100" {% if per_page == 100 %}selected{% endif %}>100 per page</option>
-                        <option value="200" {% if per_page == 200 %}selected{% endif %}>200 per page</option>
-                    </select>
-                    <button type="submit">Apply</button>
-                    <button type="button" class="reset-button">Reset Filters</button>
+            <div class="hero-content">
+                <div class="hero-badge">
+                    <span>🔥</span>
+                    AI-Powered Deal Discovery
                 </div>
-            </form>
-            {% if errors %}
-            <div class="error-message">
-                <p>Error loading deals:</p>
-                <ul>
-                {% for error in errors %}
-                    <li>{{ error }}</li>
-                {% endfor %}
-                </ul>
-            </div>
-            {% endif %}
-            {% if deals %}
-            <div class="deals-grid">
-                <div class="loading-spinner" style="display: none;"></div>
-                {% for deal in deals %}
-                <div class="deal-card {% if deal['Recently Reduced'] %}recently-reduced{% endif %}" data-favorite="{% if deal['Product Name'] in favorites %}true{% else %}false{% endif %}">
-                    <div class="image-placeholder">
-                        {% if deal['Image'] %}
-                        <a href="{{ deal['Image'] }}" target="_blank">
-                            <img src="{{ deal['Image'] }}" class="deal-image" alt="Product Image" referrerpolicy="no-referrer" crossorigin="anonymous" onerror="this.src='https://via.placeholder.com/120?text=No+Image';">
-                        </a>
-                        {% else %}
-                        <div class="image-placeholder">No Image</div>
-                        {% endif %}
+                
+                <h1 class="hero-title">
+                    Find Premium Deals<br>
+                    Before They're Gone
+                </h1>
+                
+                <p class="hero-subtitle">
+                    Advanced monitoring across John Lewis, Selfridges, and more premium retailers. 
+                    Track price drops, discover recently reduced items, and never miss a deal again.
+                </p>
+                
+                <div class="hero-cta">
+                    <a href="/johnlewis" class="btn btn-primary">
+                        Start Monitoring
+                        <span>→</span>
+                    </a>
+                    <a href="#features" class="btn btn-secondary">
+                        Learn More
+                    </a>
+                </div>
+
+                <div class="stats">
+                    <div class="stat-item">
+                        <div class="stat-number">50K+</div>
+                        <div class="stat-label">Deals Tracked</div>
                     </div>
-                    <div class="deal-info">
-                        <h3 class="deal-name">
-                            {{ deal['Product Name'][:70] }}{% if deal['Product Name']|length > 70 %}...{% endif %}
-                            {% if deal['Recently Reduced'] %}<span class="recently-reduced-badge">🔥 Recently Reduced</span>{% endif %}
-                        </h3>
-                        <div class="deal-meta">
-                            <div>Current: £{{ "%.2f"|format(deal['Current Price']) if deal['Current Price'] is not none else 'N/A' }}</div>
-                            <div>Original: £{{ "%.2f"|format(deal['Original Price']) if deal['Original Price'] is not none else 'N/A' }}</div>
-                            <div class="discount">{{ "%.1f"|format(deal['Discount']) if deal['Discount'] != 0 else 'N/A' }}%</div>
-                            <div class="{% if 'In Stock' in deal['Stock Status'] %}status-in{% else %}status-out{% endif %}">
-                                {{ deal['Stock Status'] }}
-                            </div>
-                            <div>{{ deal['Available Sizes'] if deal['Available Sizes'] != 'N/A' else 'N/A' }}</div>
-                            <div>{{ deal['Event Type'] }}</div>
-                            <div class="timestamp">{{ deal['Timestamp'] }}</div>
+                    <div class="stat-item">
+                        <div class="stat-number">24/7</div>
+                        <div class="stat-label">Monitoring</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">90%</div>
+                        <div class="stat-label">Max Discount</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Monitors Section -->
+    <section class="monitors">
+        <div class="container">
+            <div class="section-header">
+                <div class="section-badge">Premium Retailers</div>
+                <h2 class="section-title">Choose Your Monitor</h2>
+                <p class="section-description">
+                    Each monitor is specifically tuned for different retailers, tracking their unique pricing patterns and deal structures.
+                </p>
+            </div>
+
+            <div class="monitors-grid">
+                <div class="monitor-card johnlewis" onclick="window.location.href='/johnlewis'">
+                    <div class="monitor-icon johnlewis-icon">JL</div>
+                    <h3>John Lewis</h3>
+                    <p>Premium department store deals across home, fashion, tech, and more. Track seasonal sales, clearance items, and exclusive member offers.</p>
+                    
+                    <div class="monitor-stats">
+                        <div class="monitor-stat">
+                            <div class="monitor-stat-number">360+</div>
+                            <div class="monitor-stat-label">Active Deals</div>
+                        </div>
+                        <div class="monitor-stat">
+                            <div class="monitor-stat-number">80%</div>
+                            <div class="monitor-stat-label">Max Discount</div>
+                        </div>
+                        <div class="monitor-stat">
+                            <div class="monitor-stat-number">50</div>
+                            <div class="monitor-stat-label">In Stock</div>
                         </div>
                     </div>
-                    <div class="deal-action">
-                        <a href="{{ deal['URL'] }}" target="_blank" class="btn-view" rel="noopener">View Product</a>
-                        <button class="btn-favorite" data-product="{{ deal['Product Name'] }}">{% if deal['Product Name'] in favorites %}★{% else %}☆{% endif %}</button>
+
+                    <div class="monitor-status status-active">
+                        <div class="status-dot"></div>
+                        Active Monitor
                     </div>
                 </div>
-                {% endfor %}
+
+                <div class="monitor-card selfridges" onclick="window.location.href='/selfridges'">
+                    <div class="monitor-icon selfridges-icon">S</div>
+                    <h3>Selfridges</h3>
+                    <p>Luxury fashion and lifestyle deals from the world's most prestigious brands. Track designer sales, limited-time offers, and exclusive collections.</p>
+                    
+                    <div class="monitor-stats">
+                        <div class="monitor-stat">
+                            <div class="monitor-stat-number">--</div>
+                            <div class="monitor-stat-label">Active Deals</div>
+                        </div>
+                        <div class="monitor-stat">
+                            <div class="monitor-stat-number">--</div>
+                            <div class="monitor-stat-label">Max Discount</div>
+                        </div>
+                        <div class="monitor-stat">
+                            <div class="monitor-stat-number">--</div>
+                            <div class="monitor-stat-label">In Stock</div>
+                        </div>
+                    </div>
+
+                    <div class="monitor-status status-coming">
+                        <div class="status-dot"></div>
+                        Coming Soon
+                    </div>
+                </div>
             </div>
-            <div class="pagination">
-                {% if total_pages > 1 %}
-                    {% for p in range(1, total_pages + 1) %}
-                        <a href="/{{ monitor }}?page={{ p }}&per_page={{ per_page }}{% if search_query %}&search_query={{ search_query }}{% endif %}{% if category_filter %}&category_filter={{ category_filter }}{% endif %}{% if size_filter %}&size_filter={{ size_filter }}{% endif %}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}" class="{% if p == page %}active{% endif %}">{{ p }}</a>
-                    {% endfor %}
-                {% endif %}
-            </div>
-            {% else %}
-            <p class="empty">No deals yet! Our monitor is running in the background. Check back soon!</p>
-            {% endif %}
         </div>
-        <footer>Created by the original Resoled™</footer>
-        <canvas id="stars-canvas"></canvas>
-        <script src="/static/script.js{{ cache_bust }}"></script>
-    </body>
-    </html>
-    """
+    </section>
 
-    favorites = request.cookies.get('favorites')
-    if favorites:
-        try:
-            favorites = ast.literal_eval(favorites)
-            if not isinstance(favorites, list):
-                favorites = []
-        except:
-            favorites = []
-    else:
-        favorites = []
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="container">
+            <div class="section-header">
+                <div class="section-badge">Features</div>
+                <h2 class="section-title">Built for Deal Hunters</h2>
+                <p class="section-description">
+                    Advanced algorithms and real-time monitoring ensure you never miss a premium deal.
+                </p>
+            </div>
 
-    response = make_response(render_template_string(
-        template, 
-        monitor=monitor,
-        monitor_name=monitor_config['name'],
-        logo=monitor_config['logo'],
-        deals=deals, 
-        num_deals=num_deals, 
-        last_updated=last_updated,
-        search_query=search_query, 
-        errors=errors,
-        cache_bust=cache_bust, 
-        category_filter=category_filter, 
-        size_filter=size_filter,
-        size_options=size_options, 
-        sort_by=sort_by, 
-        favorites=favorites,
-        total_pages=total_pages, 
-        page=page, 
-        total_deals=total_deals, 
-        per_page=per_page,
-        recently_reduced_count=recently_reduced_count
-    ))
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3>Smart Price Tracking</h3>
+                    <p>AI-powered algorithms detect price patterns and highlight recently reduced items before they sell out.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Real-Time Updates</h3>
+                    <p>Live monitoring every 30 minutes ensures you're always seeing the latest deals and stock availability.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🔍</div>
+                    <h3>Advanced Filtering</h3>
+                    <p>Filter by category, size, discount percentage, and more to find exactly what you're looking for.</p>
+                </div>
+            </div>
+        </div>
+    </section>
 
-    response.headers['Content-Security-Policy'] = "default-src 'self'; img-src *; script-src 'self' 'unsafe-eval'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com;"
-    response.set_cookie('favorites', str(favorites), max_age=3600)
-    return response
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>© 2024 Sale Scout. Created by the original Resoled™</p>
+        </div>
+    </footer>
 
-if __name__ == '__main__':
-    app.static_folder = 'static'
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5001)))
+    <script>
+        // Theme Toggle
+        const themeToggle = document.getElementById('themeToggle');
+        const themeIcon = document.getElementById('themeIcon');
+        const body = document.body;
+
+        // Check for saved theme
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) {
+            body.classList.toggle('light-mode', savedTheme === 'light');
+            themeIcon.textContent = savedTheme === 'light' ? '☀️' : '🌙';
+        }
+
+        themeToggle.addEventListener('click', () => {
+            body.classList.toggle('light-mode');
+            const isLight = body.classList.contains('light-mode');
+            themeIcon.textContent = isLight ? '☀️' : '🌙';
+            localStorage.setItem('theme', isLight ? 'light' : 'dark');
+        });
+
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelector(this.getAttribute('href')).scrollIntoView({
+                    behavior: 'smooth'
+                });
+            });
+        });
+
+        // Add scroll effect to header
+        let lastScrollY = window.scrollY;
+        window.addEventListener('scroll', () => {
+            const header = document.querySelector('.header');
+            if (window.scrollY > 100) {
+                header.style.background = body.classList.contains('light-mode') 
+                    ? 'rgba(255, 255, 255, 0.95)' 
+                    : 'rgba(10, 14, 26, 0.95)';
+            } else {
+                header.style.background = body.classList.contains('light-mode') 
+                    ? 'rgba(255, 255, 255, 0.8)' 
+                    : 'rgba(10, 14, 26, 0.8)';
+            }
+        });
+    </script>
+</body>
+</html>
