@@ -8,29 +8,41 @@ from datetime import datetime
 import json
 
 app = Flask(__name__)
-CSV_FILE = os.environ.get("CSV_FILE", "/opt/render/project/src/johnlewisv2.csv")
 
-# NEW: Load price history for recently reduced detection
-PRICE_HISTORY_FILE = os.path.join(os.path.dirname(CSV_FILE), 'state', 'price_history.json')
+# NEW: Multi-monitor configuration
+MONITORS = {
+    'johnlewis': {
+        'name': 'John Lewis',
+        'csv_file': os.environ.get("JOHNLEWIS_CSV", "/opt/render/project/src/johnlewisv2.csv"),
+        'price_history_file': os.path.join(os.path.dirname(os.environ.get("JOHNLEWIS_CSV", "/opt/render/project/src/johnlewisv2.csv")), 'state', 'price_history.json'),
+        'color_scheme': 'emerald',  # Green theme
+        'logo': 'https://i.ibb.co/60C5BBMV/Pegasus-removebg-preview.png'
+    },
+    'selfridges': {
+        'name': 'Selfridges',
+        'csv_file': os.environ.get("SELFRIDGES_CSV", "/opt/render/project/src/selfridges.csv"),
+        'price_history_file': os.path.join(os.path.dirname(os.environ.get("SELFRIDGES_CSV", "/opt/render/project/src/selfridges.csv")), 'state', 'selfridges_price_history.json'),
+        'color_scheme': 'purple',  # Purple theme
+        'logo': 'https://i.ibb.co/60C5BBMV/Pegasus-removebg-preview.png'  # Replace with Selfridges logo when ready
+    }
+}
 
-def load_price_history():
-    """Load price history from file."""
+def load_price_history(monitor):
+    """Load price history from file for specific monitor."""
+    price_history_file = MONITORS[monitor]['price_history_file']
     try:
-        with open(PRICE_HISTORY_FILE, 'r') as f:
+        with open(price_history_file, 'r') as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
-def is_recently_reduced(product_id):
+def is_recently_reduced(product_id, monitor):
     """Check if a product is recently reduced based on price history."""
-    price_history = load_price_history()
+    price_history = load_price_history(monitor)
     return price_history.get(product_id, {}).get("recently_reduced", False)
 
 def _extract_image_from_row(row):
-    """
-    Handle cases where CSV has more fields than headers (DictReader will put extras in key `None`),
-    or where an 'Image' header already exists. Return a string URL or empty string.
-    """
+    """Handle cases where CSV has more fields than headers."""
     image_val = row.get("Image")
     if image_val:
         return str(image_val).strip()
@@ -43,10 +55,7 @@ def _extract_image_from_row(row):
     return ""
 
 def _clean_sizes_field(sizes_value, category):
-    """
-    Normalize the Sizes field into a comma-separated human-readable list,
-    and return the cleaned string, available sizes list, and filterable sizes based on category.
-    """
+    """Normalize the Sizes field into a comma-separated human-readable list."""
     if not sizes_value:
         return "N/A", [], []
 
@@ -99,23 +108,24 @@ def _clean_sizes_field(sizes_value, category):
     available_str = ", ".join(available) if available else "N/A"
     return cleaned, available, list(set(filterable_sizes))
 
-def load_deals(filter_in_stock=False, search_query="", category_filter=None, size_filter=None, 
-              sort_by=None, page=1, per_page=50, recently_reduced_filter=False):  # NEW: Recently reduced filter
+def load_deals(monitor, filter_in_stock=False, search_query="", category_filter=None, size_filter=None, 
+              sort_by=None, page=1, per_page=50, recently_reduced_filter=False):
     """Load deals from CSV with pagination and sort by specified criterion."""
     deals = []
     errors = []
-    print(f"Attempting to load CSV from: {CSV_FILE}")
+    csv_file = MONITORS[monitor]['csv_file']
+    print(f"Attempting to load CSV from: {csv_file}")
 
-    if not os.path.exists(CSV_FILE):
+    if not os.path.exists(csv_file):
         print("CSV file not found.")
-        errors.append(f"CSV file not found at {CSV_FILE}")
+        errors.append(f"CSV file not found at {csv_file}")
         return deals, errors, 0, 1
 
     try:
-        file_size = os.path.getsize(CSV_FILE)
+        file_size = os.path.getsize(csv_file)
         print(f"CSV file size: {file_size} bytes")
 
-        with open(CSV_FILE, 'r', encoding='utf-8-sig', errors='replace') as csvfile:
+        with open(csv_file, 'r', encoding='utf-8-sig', errors='replace') as csvfile:
             try:
                 csvfile.locking = False
             except Exception as e:
@@ -210,7 +220,11 @@ def load_deals(filter_in_stock=False, search_query="", category_filter=None, siz
                 
                 # Check price history first
                 if product_id:
-                    is_recent_reduction = is_recently_reduced(product_id)
+                    is_recent_reduction = is_recently_reduced(product_id, monitor)
+                
+                # Also check CSV Recently Reduced column if it exists
+                csv_recently_reduced = row.get('Recently Reduced', '').lower() == 'yes'
+                is_recent_reduction = is_recent_reduction or csv_recently_reduced
 
                 deal = {
                     "Product ID": product_id,
@@ -227,7 +241,7 @@ def load_deals(filter_in_stock=False, search_query="", category_filter=None, siz
                     "Timestamp": row.get("Timestamp", "N/A").strip(),
                     "Image": row.get("Image", "").strip(),
                     "Category": category,
-                    "Recently Reduced": is_recent_reduction  # NEW: Add recently reduced flag
+                    "Recently Reduced": is_recent_reduction
                 }
 
                 if filter_in_stock and "In Stock" not in deal["Stock Status"]:
@@ -238,7 +252,6 @@ def load_deals(filter_in_stock=False, search_query="", category_filter=None, siz
                     continue
                 if size_filter and size_filter.lower() not in [s.lower() for s in deal["Filterable Sizes"]]:
                     continue
-                # NEW: Recently reduced filter
                 if recently_reduced_filter and not deal["Recently Reduced"]:
                     continue
 
@@ -250,7 +263,7 @@ def load_deals(filter_in_stock=False, search_query="", category_filter=None, siz
                 deals.sort(key=lambda x: x['Current Price'] or float('inf'))
             elif sort_by == "timestamp":
                 deals.sort(key=lambda x: datetime.strptime(x['Timestamp'], '%Y-%m-%d %H:%M:%S') if x['Timestamp'] != 'N/A' else datetime.min, reverse=True)
-            elif sort_by == "recently_reduced":  # NEW: Sort by recently reduced
+            elif sort_by == "recently_reduced":
                 deals.sort(key=lambda x: (x['Recently Reduced'], x['Discount'] or 0), reverse=True)
             else:
                 deals.sort(key=lambda x: x['Discount'] or 0, reverse=True)
@@ -269,32 +282,79 @@ def load_deals(filter_in_stock=False, search_query="", category_filter=None, siz
     total_pages = max(1, (len(deals) + per_page - 1) // per_page)
     return paginated_deals, errors, total_deals, total_pages
 
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    """Main page showing the deals table with images and filter, with pagination."""
+@app.route('/')
+def home():
+    """Multi-monitor home page with tabs."""
+    template = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Sale Scout - Multi Monitor Dashboard</title>
+        <link rel="stylesheet" href="/static/style.css">
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    </head>
+    <body>
+        <div class="header">
+            <img src="https://i.ibb.co/60C5BBMV/Pegasus-removebg-preview.png" alt="Sale Scout Logo" class="logo">
+            <div class="header-title">
+                <h2>Sale Scout</h2>
+                <h3>Multi-Store Monitoring</h3>
+                <p class="tagline">Acquiring Deals Across Multiple Retailers</p>
+            </div>
+            <button class="theme-toggle" aria-label="Toggle dark/light mode">
+                <span class="theme-icon">🌙</span>
+            </button>
+        </div>
+        <div class="container">
+            <div class="monitor-grid">
+                <div class="monitor-card" onclick="window.location.href='/johnlewis'">
+                    <div class="monitor-icon johnlewis-theme">JL</div>
+                    <h3>John Lewis</h3>
+                    <p>Premium department store deals</p>
+                    <div class="monitor-status active">Active Monitor</div>
+                </div>
+                <div class="monitor-card" onclick="window.location.href='/selfridges'">
+                    <div class="monitor-icon selfridges-theme">S</div>
+                    <h3>Selfridges</h3>
+                    <p>Luxury fashion & lifestyle deals</p>
+                    <div class="monitor-status coming-soon">Coming Soon</div>
+                </div>
+            </div>
+        </div>
+        <footer>Created by the original Resoled™</footer>
+        <canvas id="stars-canvas"></canvas>
+        <script src="/static/script.js"></script>
+    </body>
+    </html>
+    """
+    return render_template_string(template)
+
+@app.route('/<monitor>', methods=['GET', 'POST'])
+def monitor_page(monitor):
+    """Individual monitor page."""
+    if monitor not in MONITORS:
+        return "Monitor not found", 404
+    
+    monitor_config = MONITORS[monitor]
+    
     filter_in_stock = request.form.get('filter_in_stock') == 'on'
     search_query = request.form.get('search_query', '')
     category_filter = request.form.get('category_filter', '')
     size_filter = request.form.get('size_filter', '')
     sort_by = request.form.get('sort_by', '')
-    recently_reduced_filter = request.form.get('recently_reduced_filter') == 'on'  # NEW
+    recently_reduced_filter = request.form.get('recently_reduced_filter') == 'on'
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
     
     deals, errors, total_deals, total_pages = load_deals(
-        filter_in_stock=filter_in_stock, 
-        search_query=search_query, 
-        category_filter=category_filter, 
-        size_filter=size_filter, 
-        sort_by=sort_by, 
-        page=page, 
-        per_page=per_page,
-        recently_reduced_filter=recently_reduced_filter  # NEW
+        monitor, filter_in_stock, search_query, category_filter, 
+        size_filter, sort_by, page, per_page, recently_reduced_filter
     )
     
     num_deals = len(deals)
     last_updated = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
     cache_bust = f"?v={int(datetime.now().timestamp())}"
 
     all_sizes = set()
@@ -304,7 +364,6 @@ def index():
                 all_sizes.add(size)
     size_options = sorted(all_sizes, key=lambda x: x if x not in ["Other", "One Size"] else "Z")
 
-    # Count recently reduced deals for stats
     recently_reduced_count = sum(1 for deal in deals if deal.get("Recently Reduced", False))
 
     template = """
@@ -313,25 +372,28 @@ def index():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Sale Scout - John Lewis Deals</title>
+        <title>Sale Scout - {{ monitor_name }} Deals</title>
         <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
         <meta http-equiv="Pragma" content="no-cache">
         <meta http-equiv="Expires" content="0">
         <link rel="stylesheet" href="/static/style.css{{ cache_bust }}">
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap{{ cache_bust }}" rel="stylesheet">
     </head>
-    <body>
+    <body data-monitor="{{ monitor }}">
         <div class="header">
-            <img src="https://i.ibb.co/60C5BBMV/Pegasus-removebg-preview.png" alt="Pegasus Logo" class="logo">
+            <img src="{{ logo }}" alt="{{ monitor_name }} Logo" class="logo">
             <div class="header-title">
                 <h2>Sale Scout</h2>
-                <h3>John Lewis Deals</h3>
+                <h3>{{ monitor_name }} Deals</h3>
                 <p class="tagline">Acquiring Deals</p>
                 <p>Last updated: {{ last_updated }} | Auto-refreshing every 30m <span class="spinner"></span> | Found {{ total_deals }} deals</p>
             </div>
-            <button class="theme-toggle" aria-label="Toggle dark/light mode">
-                <span class="theme-icon">🌙</span>
-            </button>
+            <div class="header-nav">
+                <a href="/" class="nav-link">← All Monitors</a>
+                <button class="theme-toggle" aria-label="Toggle dark/light mode">
+                    <span class="theme-icon">🌙</span>
+                </button>
+            </div>
         </div>
         <div class="stats-hero">
             <div class="stat-card">
@@ -356,7 +418,7 @@ def index():
             </div>
         </div>
         <div class="container">
-            <form class="search-filter-bar" method="POST" action="?per_page={{ per_page }}">
+            <form class="search-filter-bar" method="POST" action="/{{ monitor }}?per_page={{ per_page }}">
                 <input type="text" name="search_query" class="search-input" placeholder="Search deals by name..." value="{{ search_query }}">
                 <div class="filter-bar">
                     <label><input type="checkbox" name="filter_in_stock" {% if filter_in_stock %}checked{% endif %}> Show only in-stock items</label>
@@ -439,7 +501,7 @@ def index():
             <div class="pagination">
                 {% if total_pages > 1 %}
                     {% for p in range(1, total_pages + 1) %}
-                        <a href="?page={{ p }}&per_page={{ per_page }}{% if filter_in_stock %}&filter_in_stock=on{% endif %}{% if recently_reduced_filter %}&recently_reduced_filter=on{% endif %}{% if search_query %}&search_query={{ search_query }}{% endif %}{% if category_filter %}&category_filter={{ category_filter }}{% endif %}{% if size_filter %}&size_filter={{ size_filter }}{% endif %}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}" class="{% if p == page %}active{% endif %}">{{ p }}</a>
+                        <a href="/{{ monitor }}?page={{ p }}&per_page={{ per_page }}{% if filter_in_stock %}&filter_in_stock=on{% endif %}{% if recently_reduced_filter %}&recently_reduced_filter=on{% endif %}{% if search_query %}&search_query={{ search_query }}{% endif %}{% if category_filter %}&category_filter={{ category_filter }}{% endif %}{% if size_filter %}&size_filter={{ size_filter }}{% endif %}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}" class="{% if p == page %}active{% endif %}">{{ p }}</a>
                     {% endfor %}
                 {% endif %}
             </div>
@@ -465,15 +527,32 @@ def index():
     else:
         favorites = []
 
-    response = make_response(render_template_string(template, deals=deals, num_deals=num_deals, last_updated=last_updated,
-                                                   filter_in_stock=filter_in_stock, search_query=search_query, errors=errors,
-                                                   cache_bust=cache_bust, category_filter=category_filter, size_filter=size_filter,
-                                                   size_options=size_options, sort_by=sort_by, favorites=favorites,
-                                                   total_pages=total_pages, page=page, total_deals=total_deals, per_page=per_page,
-                                                   recently_reduced_filter=recently_reduced_filter, recently_reduced_count=recently_reduced_count))
+    response = make_response(render_template_string(
+        template, 
+        monitor=monitor,
+        monitor_name=monitor_config['name'],
+        logo=monitor_config['logo'],
+        deals=deals, 
+        num_deals=num_deals, 
+        last_updated=last_updated,
+        filter_in_stock=filter_in_stock, 
+        search_query=search_query, 
+        errors=errors,
+        cache_bust=cache_bust, 
+        category_filter=category_filter, 
+        size_filter=size_filter,
+        size_options=size_options, 
+        sort_by=sort_by, 
+        favorites=favorites,
+        total_pages=total_pages, 
+        page=page, 
+        total_deals=total_deals, 
+        per_page=per_page,
+        recently_reduced_filter=recently_reduced_filter, 
+        recently_reduced_count=recently_reduced_count
+    ))
 
     response.headers['Content-Security-Policy'] = "default-src 'self'; img-src *; script-src 'self' 'unsafe-eval'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com;"
-    print(f"Applied CSP: {response.headers['Content-Security-Policy']}")
     response.set_cookie('favorites', str(favorites), max_age=3600)
     return response
 
