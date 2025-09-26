@@ -44,30 +44,26 @@ def read_selfridges_csv(csv_path='salescout_selfridges.csv'):
             reader = csv.DictReader(file)
             for row in reader:
                 # Handle CSV fields based on your structure
-                product_id = row.get('id', '')
-                current_price = float(row.get('current_price', 0)) if row.get('current_price') else 0
-                original_price = float(row.get('original_price', 0)) if row.get('original_price') else 0
+                product_id = row.get('Product ID', '')
+                current_price = float(row.get('Current Price', 0)) if row.get('Current Price') else 0
+                original_price = float(row.get('Original Price', 0)) if row.get('Original Price') else 0
 
-                # Calculate discount if not provided
-                discount = 0
-                if row.get('discount_percent'):
-                    discount = float(row.get('discount_percent', 0))
-                elif original_price and current_price and original_price > current_price:
-                    discount = ((original_price - current_price) / original_price) * 100
+                # Get discount directly from CSV
+                discount = float(row.get('Discount', 0)) if row.get('Discount') else 0
 
                 product = {
                     'id': product_id,
-                    'name': row.get('name', ''),
+                    'name': row.get('Product Name', ''),
                     'brand': row.get('brand', ''),
                     'current_price': current_price,
                     'original_price': original_price,
                     'discount': round(discount, 1),
-                    'stock_status': row.get('stock_status', 'Unknown'),
-                    'sizes': 'See product page',  # Selfridges doesn't seem to have sizes in CSV
-                    'url': row.get('url', ''),
-                    'image': row.get('image_url', ''),
-                    'category': row.get('category', 'Selfridges'),
-                    'timestamp': row.get('last_updated', ''),
+                    'stock_status': row.get('Stock Status', 'Unknown'),
+                    'sizes': row.get('Sizes', 'See product page'),
+                    'url': row.get('URL', ''),
+                    'image': row.get('Image', ''),
+                    'category': row.get('Category', 'Selfridges'),
+                    'timestamp': row.get('Timestamp', ''),
                     'retailer': 'Selfridges',
                     'recently_reduced': is_recently_reduced(product_id, 'selfridges')
                 }
