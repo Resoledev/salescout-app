@@ -21,7 +21,7 @@ def load_price_history(retailer):
     price_history_file = PRICE_HISTORY_FILES.get(retailer)
     if not price_history_file or not os.path.exists(price_history_file):
         return {}
-    
+
     try:
         with open(price_history_file, 'r') as f:
             return json.load(f)
@@ -47,7 +47,7 @@ def read_selfridges_csv(csv_path='salescout_selfridges.csv'):
                 product_id = row.get('id', '')
                 current_price = float(row.get('current_price', 0)) if row.get('current_price') else 0
                 original_price = float(row.get('original_price', 0)) if row.get('original_price') else 0
-                
+
                 # Calculate discount if not provided
                 discount = 0
                 if row.get('discount_percent'):
@@ -138,15 +138,15 @@ def home():
         'max_discount': max([p['discount'] for p in johnlewis], default=0),
         'recently_reduced': sum(1 for p in johnlewis if p.get('recently_reduced', False))
     }
-    
+
     sf_stats = {
         'total': len(selfridges),
         'max_discount': max([p['discount'] for p in selfridges], default=0),
         'recently_reduced': sum(1 for p in selfridges if p.get('recently_reduced', False))
     }
 
-    return render_template('modern_home.html', 
-                         johnlewis_stats=jl_stats, 
+    return render_template('modern_home.html',
+                         johnlewis_stats=jl_stats,
                          selfridges_stats=sf_stats)
 
 @app.route('/<retailer>')
@@ -159,7 +159,7 @@ def retailer_page(retailer):
     search_query = request.args.get('search', '').lower()
     sort_by = request.args.get('sort', 'discount')
     category_filter = request.args.get('category', '')
-    
+
     # Load products
     if retailer == 'selfridges':
         products = read_selfridges_csv()
@@ -173,7 +173,7 @@ def retailer_page(retailer):
     # Apply filters
     if search_query:
         products = [p for p in products if search_query in p['name'].lower()]
-    
+
     if category_filter:
         products = [p for p in products if category_filter.lower() in p['category'].lower()]
 
@@ -199,8 +199,8 @@ def retailer_page(retailer):
         'last_updated': products[0]['timestamp'] if products else 'Never'
     }
 
-    return render_template('modern_retailer.html', 
-                         products=products, 
+    return render_template('modern_retailer.html',
+                         products=products,
                          retailer=retailer_name,
                          retailer_key=retailer,
                          stats=stats,
