@@ -335,6 +335,49 @@
             box-shadow: 0 12px 48px var(--accent-glow);
         }
 
+        /* NEW: View Toggle Controls */
+        .view-controls {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 32px;
+        }
+
+        .view-toggle {
+            display: flex;
+            background: var(--bg-glass);
+            backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+        }
+
+        .view-btn {
+            padding: 12px 20px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: inherit;
+        }
+
+        .view-btn.active {
+            background: var(--gradient-primary);
+            color: white;
+            box-shadow: 0 0 12px var(--accent-glow);
+        }
+
+        .view-btn:not(.active):hover {
+            color: var(--text-primary);
+            background: var(--bg-secondary);
+        }
+
         /* Premium Product Grid */
         .products-section {
             padding: 60px 0;
@@ -347,6 +390,50 @@
             gap: 32px;
             margin-bottom: 60px;
             perspective: 1200px;
+            transition: all 0.5s ease;
+        }
+
+        /* NEW: Gallery View Styles */
+        .products-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
+            gap: 40px;
+            margin-bottom: 60px;
+            perspective: 1200px;
+            transition: all 0.5s ease;
+        }
+
+        .products-gallery .product-card {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            min-height: 360px;
+            aspect-ratio: auto;
+        }
+
+        .products-gallery .product-image-container {
+            width: 320px;
+            height: 360px;
+            margin: 0;
+        }
+
+        .products-gallery .product-image {
+            object-fit: contain;
+            padding: 16px;
+        }
+
+        .products-gallery .product-info {
+            padding: 32px;
+            height: 360px;
+        }
+
+        .products-gallery .product-name {
+            font-size: 20px;
+            -webkit-line-clamp: 3;
+            min-height: 75px;
+        }
+
+        .products-gallery .current-price {
+            font-size: 28px;
         }
 
         .product-card {
@@ -482,11 +569,11 @@
         }
 
         @keyframes fire-pulse {
-            0%, 100% { 
+            0%, 100% {
                 transform: scale(1);
                 box-shadow: 0 4px 12px var(--recently-reduced-glow);
             }
-            50% { 
+            50% {
                 transform: scale(1.05);
                 box-shadow: 0 6px 24px var(--recently-reduced-glow);
             }
@@ -662,63 +749,87 @@
         /* Mobile Responsiveness */
         @media (max-width: 768px) {
             .container { padding: 0 20px; }
-            
+
             .nav {
                 flex-direction: column;
                 gap: 16px;
                 padding: 16px 0;
                 height: auto;
             }
-            
+
             .nav-actions {
                 width: 100%;
                 justify-content: space-between;
             }
-            
+
             .stats-hero {
                 padding: 100px 0 40px;
             }
-            
+
             .filters {
                 flex-direction: column;
                 align-items: stretch;
                 padding: 32px 24px;
             }
-            
+
             .search-input, .filter-select {
                 min-width: auto;
             }
-            
+
+            .view-controls {
+                justify-content: center;
+                margin-bottom: 24px;
+            }
+
             .products-grid {
                 grid-template-columns: 1fr;
                 gap: 24px;
             }
-            
+
+            .products-gallery {
+                grid-template-columns: 1fr;
+                gap: 24px;
+            }
+
+            .products-gallery .product-card {
+                grid-template-columns: 1fr;
+                min-height: auto;
+            }
+
+            .products-gallery .product-image-container {
+                width: 100%;
+                height: 240px;
+            }
+
+            .products-gallery .product-info {
+                height: auto;
+            }
+
             .product-card {
                 min-height: 400px;
             }
-            
+
             .product-image-container {
                 height: 200px;
             }
-            
+
             .product-info {
                 height: calc(100% - 200px);
                 padding: 24px;
             }
-            
-            .stats { 
-                grid-template-columns: repeat(2, 1fr); 
+
+            .stats {
+                grid-template-columns: repeat(2, 1fr);
             }
-            
+
             .product-card:hover {
                 transform: translateY(-8px) scale(1.01);
             }
-            
+
             .current-price {
                 font-size: 20px;
             }
-            
+
             .product-name {
                 font-size: 16px;
             }
@@ -749,6 +860,11 @@
 
         .nav-link:focus-visible,
         .theme-toggle:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        .view-btn:focus-visible {
             outline: 2px solid var(--accent);
             outline-offset: 2px;
         }
@@ -798,9 +914,9 @@
     <section class="filters-section">
         <div class="container">
             <form class="filters" method="GET">
-                <input type="text" name="search" class="search-input" placeholder="Search products..." 
+                <input type="text" name="search" class="search-input" placeholder="Search products..."
                        value="{{ current_search }}" autocomplete="off">
-                
+
                 <select name="sort" class="filter-select">
                     <option value="discount" {% if current_sort == 'discount' %}selected{% endif %}>Sort by discount</option>
                     <option value="recently_reduced" {% if current_sort == 'recently_reduced' %}selected{% endif %}>Recently reduced first</option>
@@ -830,7 +946,19 @@
     <main class="products-section">
         <div class="container">
             {% if products %}
-            <div class="products-grid" id="productsGrid">
+            <!-- NEW: View Toggle Controls -->
+            <div class="view-controls">
+                <div class="view-toggle">
+                    <button class="view-btn active" data-view="grid" id="gridViewBtn">
+                        <span>⊞</span> Grid View
+                    </button>
+                    <button class="view-btn" data-view="gallery" id="galleryViewBtn">
+                        <span>⊟</span> Gallery View
+                    </button>
+                </div>
+            </div>
+
+            <div class="products-grid" id="productsContainer">
                 <div class="loading-spinner"></div>
                 {% for product in products %}
                 <a href="{{ product.url }}" class="product-link" target="_blank" rel="noopener">
@@ -852,7 +980,7 @@
                                 {% if product.discount > 0 %}
                                 <div class="discount-badge">-{{ product.discount|round(1) }}%</div>
                                 {% endif %}
-                                
+
                                 {% if product.recently_reduced %}
                                 <div class="recently-reduced-badge">
                                     <span>🔥</span>
@@ -907,7 +1035,7 @@
         // Enhanced theme detection
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         const savedTheme = localStorage.getItem('theme');
-        
+
         if (savedTheme) {
             body.classList.toggle('light-mode', savedTheme === 'light');
             themeIcon.textContent = savedTheme === 'light' ? '☀️' : '🌙';
@@ -923,41 +1051,64 @@
             localStorage.setItem('theme', isLight ? 'light' : 'dark');
         });
 
+        // NEW: View Toggle Functionality
+        const gridViewBtn = document.getElementById('gridViewBtn');
+        const galleryViewBtn = document.getElementById('galleryViewBtn');
+        const productsContainer = document.getElementById('productsContainer');
+
+        // Load saved view preference
+        const savedView = localStorage.getItem('salescout-view-preference') || 'grid';
+        switchView(savedView);
+
+        function switchView(view) {
+            // Update button states
+            gridViewBtn.classList.toggle('active', view === 'grid');
+            galleryViewBtn.classList.toggle('active', view === 'gallery');
+
+            // Update container class
+            productsContainer.className = view === 'gallery' ? 'products-gallery' : 'products-grid';
+
+            // Save preference
+            localStorage.setItem('salescout-view-preference', view);
+        }
+
+        gridViewBtn.addEventListener('click', () => switchView('grid'));
+        galleryViewBtn.addEventListener('click', () => switchView('gallery'));
+
         // Enhanced loading state management
         const form = document.querySelector('.filters');
-        const productsGrid = document.getElementById('productsGrid');
 
         if (form) {
             form.addEventListener('submit', () => {
-                productsGrid.classList.add('loading');
+                productsContainer.classList.add('loading');
             });
         }
 
         // Remove loading state when page is fully loaded
         window.addEventListener('load', () => {
-            productsGrid.classList.remove('loading');
+            productsContainer.classList.remove('loading');
         });
 
         // Ensure loading class is removed
         document.addEventListener('DOMContentLoaded', () => {
-            productsGrid.classList.remove('loading');
+            productsContainer.classList.remove('loading');
         });
 
         // Mouse tracking for 3D card effects
         document.addEventListener('mousemove', (e) => {
             const cards = document.querySelectorAll('.product-card');
-            
+
             cards.forEach(card => {
                 const rect = card.getBoundingClientRect();
                 const x = e.clientX - rect.left;
                 const y = e.clientY - rect.top;
-                
+
                 const centerX = rect.width / 2;
                 const centerY = rect.height / 2;
-                
+
                 const rotateX = (y - centerY) / 20;
                 const rotateY = (centerX - x) / 20;
-                
+
                 if (x >= 0 && x <= rect.width && y >= 0 && y <= rect.height) {
                     card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateZ(10px)`;
                 } else {
