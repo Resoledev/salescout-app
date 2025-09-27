@@ -6,7 +6,7 @@ from flask import Flask, render_template, jsonify, request
 import csv
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
@@ -15,6 +15,9 @@ PRICE_HISTORY_FILES = {
     'johnlewis': 'johnlewis_price_history.json',
     'selfridges': 'selfridges_price_history.json'
 }
+
+# Recently added time threshold (hours)
+RECENTLY_ADDED_HOURS = 24
 
 def load_price_history(retailer):
     """Load price history for recently reduced detection"""
@@ -32,6 +35,22 @@ def is_recently_reduced(product_id, retailer):
     """Check if product is recently reduced"""
     price_history = load_price_history(retailer)
     return price_history.get(str(product_id), {}).get("recently_reduced", False)
+
+def is_recently_added(timestamp_str):
+    """Check if product was added within the recently added time threshold"""
+    if not timestamp_str:
+        return False
+
+    try:
+        # Parse the timestamp from the CSV
+        timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+        current_time = datetime.now()
+        time_diff = current_time - timestamp
+
+        # Check if the product was added within the threshold
+        return time_diff <= timedelta(hours=RECENTLY_ADDED_HOURS)
+    except (ValueError, TypeError):
+        return False
 
 def read_selfridges_csv(csv_path='salescout_selfridges.csv'):
     """Read Selfridges CSV data with recently reduced detection"""
@@ -65,7 +84,8 @@ def read_selfridges_csv(csv_path='salescout_selfridges.csv'):
                     'category': row.get('Category', 'Selfridges'),
                     'timestamp': row.get('Timestamp', ''),
                     'retailer': 'Selfridges',
-                    'recently_reduced': is_recently_reduced(product_id, 'selfridges')
+                    'recently_reduced': is_recently_reduced(product_id, 'selfridges'),
+                    'recently_added': is_recently_added(row.get('Timestamp', ''))
                 }
 
                 if product['original_price'] and product['current_price']:
@@ -108,7 +128,8 @@ def read_johnlewis_csv(csv_path='johnlewisv2.csv'):
                     'category': row.get('Category', 'John Lewis'),
                     'timestamp': row.get('Timestamp', ''),
                     'retailer': 'John Lewis',
-                    'recently_reduced': is_recently_reduced(product_id, 'johnlewis')
+                    'recently_reduced': is_recently_reduced(product_id, 'johnlewis'),
+                    'recently_added': is_recently_added(row.get('Timestamp', ''))
                 }
 
                 if product['original_price'] and product['current_price']:
@@ -132,13 +153,15 @@ def home():
     jl_stats = {
         'total': len(johnlewis),
         'max_discount': max([p['discount'] for p in johnlewis], default=0),
-        'recently_reduced': sum(1 for p in johnlewis if p.get('recently_reduced', False))
+        'recently_reduced': sum(1 for p in johnlewis if p.get('recently_reduced', False)),
+        'recently_added': sum(1 for p in johnlewis if p.get('recently_added', False))
     }
 
     sf_stats = {
         'total': len(selfridges),
         'max_discount': max([p['discount'] for p in selfridges], default=0),
-        'recently_reduced': sum(1 for p in selfridges if p.get('recently_reduced', False))
+        'recently_reduced': sum(1 for p in selfridges if p.get('recently_reduced', False)),
+        'recently_added': sum(1 for p in selfridges if p.get('recently_added', False))
     }
 
     return render_template('modern_home.html',
@@ -155,6 +178,7 @@ def retailer_page(retailer):
     search_query = request.args.get('search', '').lower()
     sort_by = request.args.get('sort', 'discount')
     category_filter = request.args.get('category', '')
+    recently_added_filter = request.args.get('recently_added', '')
 
     # Load products
     if retailer == 'selfridges':
@@ -173,9 +197,14 @@ def retailer_page(retailer):
     if category_filter:
         products = [p for p in products if category_filter.lower() in p['category'].lower()]
 
+    if recently_added_filter == 'true':
+        products = [p for p in products if p.get('recently_added', False)]
+
     # Apply sorting
     if sort_by == 'recently_reduced':
         products.sort(key=lambda x: (x.get('recently_reduced', False), x['discount']), reverse=True)
+    elif sort_by == 'recently_added':
+        products.sort(key=lambda x: (x.get('recently_added', False), x['discount']), reverse=True)
     elif sort_by == 'net_reduction':
         products.sort(key=lambda x: x.get('savings', 0), reverse=True)
     elif sort_by == 'price':
@@ -192,6 +221,7 @@ def retailer_page(retailer):
         'max_discount': max([p['discount'] for p in products], default=0),
         'total_savings': sum(p.get('savings', 0) for p in products),
         'recently_reduced_count': sum(1 for p in products if p.get('recently_reduced', False)),
+        'recently_added_count': sum(1 for p in products if p.get('recently_added', False)),
         'last_updated': products[0]['timestamp'] if products else 'Never'
     }
 
@@ -203,7 +233,8 @@ def retailer_page(retailer):
                          color_theme=color_theme,
                          current_search=request.args.get('search', ''),
                          current_sort=sort_by,
-                         current_category=category_filter)
+                         current_category=category_filter,
+                         current_recently_added=recently_added_filter)
 
 # API endpoints (keep existing)
 @app.route('/api/selfridges')
