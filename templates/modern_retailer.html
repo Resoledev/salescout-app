@@ -563,6 +563,22 @@
             gap: 4px;
         }
 
+        .recently-added-badge {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 100px;
+            font-weight: 800;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 4px 12px var(--success-glow);
+            animation: pulse-glow 2s infinite;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
         @keyframes pulse-glow {
             0%, 100% { box-shadow: 0 4px 12px var(--accent-glow); }
             50% { box-shadow: 0 4px 24px var(--accent-glow); }
@@ -923,6 +939,10 @@
                     <div class="stat-label">Recently reduced</div>
                 </div>
                 <div class="stat-card">
+                    <div class="stat-number">{{ stats.recently_added_count }}</div>
+                    <div class="stat-label">Recently added</div>
+                </div>
+                <div class="stat-card">
                     <div class="stat-number">£{{ "%.0f"|format(stats.total_savings) }}</div>
                     <div class="stat-label">Total savings</div>
                 </div>
@@ -939,6 +959,7 @@
                 <select name="sort" class="filter-select">
                     <option value="discount" {% if current_sort == 'discount' %}selected{% endif %}>Sort by discount</option>
                     <option value="recently_reduced" {% if current_sort == 'recently_reduced' %}selected{% endif %}>Recently reduced first</option>
+                    <option value="recently_added" {% if current_sort == 'recently_added' %}selected{% endif %}>Recently added first</option>
                     <option value="net_reduction" {% if current_sort == 'net_reduction' %}selected{% endif %}>Highest savings</option>
                     <option value="price" {% if current_sort == 'price' %}selected{% endif %}>Price (low to high)</option>
                     <option value="name" {% if current_sort == 'name' %}selected{% endif %}>Name (A-Z)</option>
@@ -953,6 +974,11 @@
                         <option value="women" {% if current_category == 'women' %}selected{% endif %}>Women's</option>
                         <option value="men" {% if current_category == 'men' %}selected{% endif %}>Men's</option>
                     {% endif %}
+                </select>
+
+                <select name="recently_added" class="filter-select">
+                    <option value="">Show all items</option>
+                    <option value="true" {% if current_recently_added == 'true' %}selected{% endif %}>Recently added only</option>
                 </select>
 
                 <button type="submit" class="filter-btn">
@@ -996,16 +1022,27 @@
                             {% endif %}
 
                             <div class="product-badges">
-                                {% if product.discount > 0 %}
-                                <div class="discount-badge">-{{ product.discount|round(1) }}%</div>
-                                {% endif %}
-
-                                {% if product.recently_reduced %}
-                                <div class="recently-reduced-badge">
-                                    <span>🔥</span>
-                                    Recently Reduced
+                                <div>
+                                    {% if product.discount > 0 %}
+                                    <div class="discount-badge">-{{ product.discount|round(1) }}%</div>
+                                    {% endif %}
                                 </div>
-                                {% endif %}
+
+                                <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
+                                    {% if product.recently_reduced %}
+                                    <div class="recently-reduced-badge">
+                                        <span>🔥</span>
+                                        Recently Reduced
+                                    </div>
+                                    {% endif %}
+
+                                    {% if product.recently_added %}
+                                    <div class="recently-added-badge">
+                                        <span>✨</span>
+                                        Recently Added
+                                    </div>
+                                    {% endif %}
+                                </div>
                             </div>
                         </div>
 
