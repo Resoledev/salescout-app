@@ -14,6 +14,7 @@ import os
 import signal
 import sys
 import csv
+from collections import defaultdict
 
 
 # Configure directories and logging for Windows
@@ -21,6 +22,7 @@ PROJECT_DIR = r"C:\Users\Roryi\Desktop\Chapter 8\Coding\Price Monitor"
 LOG_DIR = os.path.join(PROJECT_DIR, 'logs')
 STATE_DIR = os.path.join(PROJECT_DIR, 'state')
 CSV_FILE = os.path.join(PROJECT_DIR, 'johnlewisv2.csv')
+PRICE_HISTORY_FILE = os.path.join(STATE_DIR, 'price_history.json')  # NEW: Track price changes
 LOG_FILE = os.path.join(LOG_DIR, 'price_monitor.log')  # Unified log
 os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs(STATE_DIR, exist_ok=True)
@@ -128,6 +130,138 @@ def normalize_size(size):
     size = size.strip()
     size = re.sub(r'^(uk|eu)(\d+)$', r'\1 \2', size, flags=re.I)
     return size
+
+
+# NEW: Price history management functions
+def load_price_history():
+    """Load price history from file."""
+    try:
+        with open(PRICE_HISTORY_FILE, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_price_history(price_history):
+    """Save price history to file."""
+    try:
+        with open(PRICE_HISTORY_FILE, 'w') as f:
+            json.dump(price_history, f, indent=2)
+    except Exception as e:
+        logging.error(f"Failed to save price history: {e}")
+
+
+def update_price_history(product_id, current_price, product_name):
+    """Update price history for a product and return if it's recently reduced with improved logic."""
+    price_history = load_price_history()
+    current_time = datetime.now().isoformat()
+    
+    if product_id not in price_history:
+        # First time seeing this product - record initial price
+        price_history[product_id] = {
+            "name": product_name,
+            "initial_price": current_price,  # Track original discovery price
+            "prices": [{"price": current_price, "timestamp": current_time}],
+            "recently_reduced": False,
+            "reduction_from_initial": 0.0
+        }
+        logging.info(f"New product tracked: {product_name} at £{current_price}")
+    else:
+        # Add new price entry
+        price_history[product_id]["prices"].append({
+            "price": current_price, 
+            "timestamp": current_time
+        })
+        
+        # Keep only last 20 price entries to prevent file bloat
+        price_history[product_id]["prices"] = price_history[product_id]["prices"][-20:]
+        
+        # Get initial price (first time we saw this product)
+        initial_price = price_history[product_id].get("initial_price")
+        if not initial_price:
+            # Backward compatibility - use oldest price if initial_price missing
+            initial_price = price_history[product_id]["prices"][0]["price"]
+            price_history[product_id]["initial_price"] = initial_price
+        
+        # Calculate reduction from initial discovery price
+        reduction_from_initial = 0.0
+        if current_price is not None and initial_price is not None and initial_price > 0:
+            reduction_from_initial = ((initial_price - current_price) / initial_price) * 100
+        
+        price_history[product_id]["reduction_from_initial"] = reduction_from_initial
+        
+        # Mark as recently reduced if:
+        # 1. Price has dropped significantly from initial discovery (>= 5% additional reduction)
+        # 2. OR price has dropped in the last 3 price checks
+        recent_reduction_threshold = 5.0  # 5% additional reduction from initial
+        
+        # Check for significant reduction from initial price
+        is_significantly_reduced = reduction_from_initial >= recent_reduction_threshold
+        
+        # Check for recent price drops (last 3 entries)
+        recent_drop = False
+        if len(price_history[product_id]["prices"]) >= 3:
+            last_3_prices = [p["price"] for p in price_history[product_id]["prices"][-3:] if p["price"] is not None]
+            if len(last_3_prices) >= 2:
+                # Check if there's a downward trend in recent prices
+                recent_drop = last_3_prices[-1] < last_3_prices[0]
+        
+        price_history[product_id]["recently_reduced"] = is_significantly_reduced or recent_drop
+        
+        if price_history[product_id]["recently_reduced"]:
+            logging.info(f"Recently reduced detected: {product_name} - Initial: £{initial_price}, Current: £{current_price}, Reduction: {reduction_from_initial:.1f}%")
+            print(f"🔥 RECENTLY REDUCED: {product_name} - {reduction_from_initial:.1f}% off initial price")
+    
+    save_price_history(price_history)
+    return price_history[product_id].get("recently_reduced", False)
+
+
+def get_recently_reduced_products():
+    """Get list of recently reduced product IDs."""
+    price_history = load_price_history()
+    return [pid for pid, data in price_history.items() if data.get("recently_reduced", False)]
+
+
+# NEW: CSV cleanup function
+def clean_old_products_from_csv(current_product_ids):
+    """Remove products from CSV that are no longer available, keep recently reduced ones."""
+    if not os.path.exists(CSV_FILE):
+        return
+    
+    recently_reduced_ids = get_recently_reduced_products()
+    
+    try:
+        # Read current CSV
+        rows_to_keep = []
+        removed_count = 0
+        
+        with open(CSV_FILE, 'r', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            headers = reader.fieldnames
+            
+            for row in reader:
+                product_id = row.get('Product ID', '')
+                
+                # Keep if currently active OR recently reduced
+                if product_id in current_product_ids or product_id in recently_reduced_ids:
+                    rows_to_keep.append(row)
+                else:
+                    removed_count += 1
+                    logging.info(f"Removing old product from CSV: {row.get('Product Name', 'Unknown')} (ID: {product_id})")
+        
+        # Write back cleaned CSV
+        with open(CSV_FILE, 'w', newline='', encoding='utf-8') as csvfile:
+            if rows_to_keep and headers:
+                writer = csv.DictWriter(csvfile, fieldnames=headers, quoting=csv.QUOTE_ALL)
+                writer.writeheader()
+                writer.writerows(rows_to_keep)
+        
+        logging.info(f"CSV cleanup complete: Removed {removed_count} old products, kept {len(rows_to_keep)} products")
+        print(f"CSV cleanup complete: Removed {removed_count} old products, kept {len(rows_to_keep)} products")
+        
+    except Exception as e:
+        logging.error(f"Error cleaning CSV: {e}")
+        print(f"Error cleaning CSV: {e}")
 
 
 def fetch_category_page(url, page=1, chunk=1):
@@ -395,6 +529,10 @@ def fetch_product_info(url, counter, total, category_name):
                 discount = ((original_price - current_price) / original_price) * 100
 
 
+            # NEW: Update price history and check if recently reduced
+            is_recently_reduced = update_price_history(product_id, current_price, name)
+
+
             # Variant handling (Boots-specific, but available for all)
             variants = []
             variant_elements = soup.find_all("a", attrs={"data-testid": re.compile(r"colour:option", re.I)}) or \
@@ -426,9 +564,12 @@ def fetch_product_info(url, counter, total, category_name):
                 "image": image_url or "",
                 "sizes": sizes,
                 "variants": variants,
-                "category": category_name
+                "category": category_name,
+                "recently_reduced": is_recently_reduced  # NEW: Track if recently reduced
             }
             price_status = f"Current: {current_price if current_price is not None else 'None'}, Original: {original_price if original_price is not None else 'None'}, Discount: {discount:.2f}%"
+            if is_recently_reduced:
+                price_status += " [RECENTLY REDUCED]"
             print(f"Fetched product {counter}/{total} ({category_name}): {name}, {price_status}")
             logging.info(f"Fetched product {counter}/{total} ({category_name}): {name}, {price_status}")
             return product
@@ -711,6 +852,7 @@ def send_item_webhook(product, event_type, previous_state, price_diff=None, dire
             response = webhook.execute()
             logging.info(f"Sent webhook for {product['name']} ({category}) ({event_type}) (Status: {response.status_code})")
             print(f"Sent webhook for {product['name']} ({category}) ({event_type})")
+            
             # Append to unified CSV with DictWriter for consistent headers, including Product ID
             row_data = {
                 'Product ID': product_id,  # New: Add Product ID for tracking
@@ -725,7 +867,8 @@ def send_item_webhook(product, event_type, previous_state, price_diff=None, dire
                 'Timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'Image': product['image'] if product['image'] else "",
                 'Category': category,
-                'Variants': variants_value
+                'Variants': variants_value,
+                'Recently Reduced': 'Yes' if product.get('recently_reduced', False) else 'No'  # NEW: Add recently reduced flag
             }
             file_exists = os.path.exists(CSV_FILE) and os.path.getsize(CSV_FILE) > 0
             with open(CSV_FILE, 'a', newline='', encoding='utf-8') as csvfile:
@@ -830,8 +973,8 @@ def signal_handler(sig, frame):
 def main():
     """Monitor all categories for new products and price changes."""
     global cycle_count, ssl_error_count, excluded_keyword_count
-    logging.info("Starting unified John Lewis monitor (v25 fixed duplicates)...")
-    print("Starting unified John Lewis monitor (v25 fixed duplicates)...")
+    logging.info("Starting unified John Lewis monitor (v26 with old item cleanup and recently reduced tracking)...")
+    print("Starting unified John Lewis monitor (v26 with old item cleanup and recently reduced tracking)...")
 
 
     signal.signal(signal.SIGINT, signal_handler)
@@ -850,6 +993,7 @@ def main():
             total_changes_all = 0
             filtered_count_all = 0
             request_count_all = 0
+            all_current_product_ids = set()  # NEW: Track all current product IDs across categories
 
 
             for category_name, category_config in CATEGORY_URLS.items():
@@ -874,6 +1018,7 @@ def main():
                     if product:
                         products.append(product)
                         current_product_ids.add(product["product_id"])
+                        all_current_product_ids.add(product["product_id"])  # NEW: Add to global set
                     else:
                         filtered_count += 1
                     request_count += 1
@@ -902,6 +1047,11 @@ def main():
                 # Delay between categories to be nice
                 time.sleep(random.uniform(30, 60))
            
+            # NEW: Clean old products from CSV after all categories are processed
+            print("\n--- Cleaning old products from CSV ---")
+            logging.info("--- Cleaning old products from CSV ---")
+            clean_old_products_from_csv(all_current_product_ids)
+           
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds() / 60.0
             logging.info(f"Cycle {cycle_count} finished at {end_time.strftime('%Y-%m-%d %H:%M:%S')}, took {duration:.2f} minutes")
@@ -912,7 +1062,7 @@ def main():
 
             if cycle_count % NOTIFY_EVERY_CYCLES == 0:
                 # Send summary for all categories
-                summary_msg = f"✅ Full Cycle {cycle_count} Complete: {total_products_all} products checked, {total_changes_all} changes across all categories."
+                summary_msg = f"✅ Full Cycle {cycle_count} Complete: {total_products_all} products checked, {total_changes_all} changes across all categories. CSV cleaned of old products."
                 webhook = DiscordWebhook(url=WEBHOOK_URL, content=summary_msg)
                 webhook.execute()
 
