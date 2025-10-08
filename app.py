@@ -1,6 +1,5 @@
 """
-Updated Flask app for SaleScout with modern design
-Replace your current app.py with this
+Complete Flask app for SaleScout with modern design and recently added tracking
 """
 from flask import Flask, render_template, jsonify, request
 import csv
@@ -12,7 +11,7 @@ app = Flask(__name__)
 
 # Price history file paths
 PRICE_HISTORY_FILES = {
-    'johnlewis': 'johnlewis_price_history.json',
+    'johnlewis': 'price_history.json',  # Updated to match your actual file
     'selfridges': 'selfridges_price_history.json'
 }
 
@@ -22,6 +21,13 @@ RECENTLY_ADDED_HOURS = 24
 def load_price_history(retailer):
     """Load price history for recently reduced detection"""
     price_history_file = PRICE_HISTORY_FILES.get(retailer)
+    
+    # If johnlewis, try the state directory path
+    if retailer == 'johnlewis':
+        state_dir_path = os.path.join('state', 'price_history.json')
+        if os.path.exists(state_dir_path):
+            price_history_file = state_dir_path
+    
     if not price_history_file or not os.path.exists(price_history_file):
         return {}
 
@@ -37,7 +43,9 @@ def is_recently_reduced(product_id, retailer):
     return price_history.get(str(product_id), {}).get("recently_reduced", False)
 
 def is_recently_added(timestamp_str):
-    """Check if product was added within the recently added time threshold"""
+    """
+    Check if product was added within the recently added time threshold
+    """
     if not timestamp_str:
         return False
 
@@ -48,8 +56,10 @@ def is_recently_added(timestamp_str):
         time_diff = current_time - timestamp
 
         # Check if the product was added within the threshold
-        return time_diff <= timedelta(hours=RECENTLY_ADDED_HOURS)
-    except (ValueError, TypeError):
+        is_recent = time_diff <= timedelta(hours=RECENTLY_ADDED_HOURS)
+        
+        return is_recent
+    except (ValueError, TypeError) as e:
         return False
 
 def read_selfridges_csv(csv_path='salescout_selfridges.csv'):
@@ -64,11 +74,21 @@ def read_selfridges_csv(csv_path='salescout_selfridges.csv'):
             for row in reader:
                 # Handle CSV fields based on your structure
                 product_id = row.get('Product ID', '')
-                current_price = float(row.get('Current Price', 0)) if row.get('Current Price') else 0
-                original_price = float(row.get('Original Price', 0)) if row.get('Original Price') else 0
+                
+                try:
+                    current_price = float(row.get('Current Price', 0)) if row.get('Current Price') else 0
+                except ValueError:
+                    current_price = 0
+                    
+                try:
+                    original_price = float(row.get('Original Price', 0)) if row.get('Original Price') else 0
+                except ValueError:
+                    original_price = 0
 
-                # Get discount directly from CSV
-                discount = float(row.get('Discount', 0)) if row.get('Discount') else 0
+                try:
+                    discount = float(row.get('Discount', 0)) if row.get('Discount') else 0
+                except ValueError:
+                    discount = 0
 
                 product = {
                     'id': product_id,
@@ -100,20 +120,40 @@ def read_selfridges_csv(csv_path='salescout_selfridges.csv'):
     return products
 
 def read_johnlewis_csv(csv_path='johnlewisv2.csv'):
-    """Read John Lewis CSV data with recently reduced detection"""
+    """Read John Lewis CSV data with recently reduced and recently added detection"""
     products = []
     if not os.path.exists(csv_path):
+        print(f"CSV not found: {csv_path}")
         return products
 
     try:
         with open(csv_path, 'r', encoding='utf-8') as file:
             reader = csv.DictReader(file)
+            
             for row in reader:
                 product_id = row.get('Product ID', '')
-                current_price = float(row.get('Current Price', 0)) if row.get('Current Price') else 0
-                original_price = float(row.get('Original Price', 0)) if row.get('Original Price') else 0
-                discount = float(row.get('Discount', 0)) if row.get('Discount') else 0
-
+                
+                # Parse prices safely
+                try:
+                    current_price = float(row.get('Current Price', 0)) if row.get('Current Price') else 0
+                except ValueError:
+                    current_price = 0
+                
+                try:
+                    original_price = float(row.get('Original Price', 0)) if row.get('Original Price') else 0
+                except ValueError:
+                    original_price = 0
+                
+                try:
+                    discount = float(row.get('Discount', 0)) if row.get('Discount') else 0
+                except ValueError:
+                    discount = 0
+                
+                timestamp = row.get('Timestamp', '')
+                
+                # Check recently added status
+                recently_added = is_recently_added(timestamp)
+                
                 product = {
                     'id': product_id,
                     'name': row.get('Product Name', ''),
@@ -126,10 +166,10 @@ def read_johnlewis_csv(csv_path='johnlewisv2.csv'):
                     'url': row.get('URL', ''),
                     'image': row.get('Image', ''),
                     'category': row.get('Category', 'John Lewis'),
-                    'timestamp': row.get('Timestamp', ''),
+                    'timestamp': timestamp,
                     'retailer': 'John Lewis',
                     'recently_reduced': is_recently_reduced(product_id, 'johnlewis'),
-                    'recently_added': is_recently_added(row.get('Timestamp', ''))
+                    'recently_added': recently_added
                 }
 
                 if product['original_price'] and product['current_price']:
@@ -138,6 +178,11 @@ def read_johnlewis_csv(csv_path='johnlewisv2.csv'):
                     product['savings'] = 0
 
                 products.append(product)
+        
+        print(f"Loaded {len(products)} products from John Lewis CSV")
+        recently_added_count = sum(1 for p in products if p.get('recently_added', False))
+        print(f"  Recently added: {recently_added_count} products")
+        
     except Exception as e:
         print(f"Error reading John Lewis CSV: {e}")
 
@@ -190,15 +235,34 @@ def retailer_page(retailer):
         retailer_name = 'John Lewis'
         color_theme = 'green'
 
+    print(f"\n=== {retailer_name} Filter Debug ===")
+    print(f"Total products loaded: {len(products)}")
+    print(f"Recently added filter: '{recently_added_filter}'")
+    
+    # Count recently added BEFORE filtering
+    recently_added_count_before = sum(1 for p in products if p.get('recently_added', False))
+    print(f"Recently added products before filter: {recently_added_count_before}")
+
     # Apply filters
     if search_query:
         products = [p for p in products if search_query in p['name'].lower()]
+        print(f"After search filter: {len(products)} products")
 
     if category_filter:
         products = [p for p in products if category_filter.lower() in p['category'].lower()]
+        print(f"After category filter: {len(products)} products")
 
+    # Recently added filter
     if recently_added_filter == 'true':
+        before_count = len(products)
         products = [p for p in products if p.get('recently_added', False)]
+        print(f"Recently added filter applied: {before_count} -> {len(products)} products")
+        
+        # Debug: Show which products passed
+        if products:
+            print("Recently added products:")
+            for p in products[:5]:  # Show first 5
+                print(f"  - {p['name'][:50]} (added: {p.get('timestamp', 'N/A')})")
 
     # Apply sorting
     if sort_by == 'recently_reduced':
@@ -224,6 +288,9 @@ def retailer_page(retailer):
         'recently_added_count': sum(1 for p in products if p.get('recently_added', False)),
         'last_updated': products[0]['timestamp'] if products else 'Never'
     }
+    
+    print(f"Final stats - Recently added: {stats['recently_added_count']}")
+    print(f"=================================\n")
 
     return render_template('modern_retailer.html',
                          products=products,
@@ -236,7 +303,7 @@ def retailer_page(retailer):
                          current_category=category_filter,
                          current_recently_added=recently_added_filter)
 
-# API endpoints (keep existing)
+# API endpoints
 @app.route('/api/selfridges')
 def api_selfridges():
     """Selfridges API endpoint"""
