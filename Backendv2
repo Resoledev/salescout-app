@@ -17,13 +17,8 @@ import csv
 from collections import defaultdict
 
 
-# Configure directories and logging
-# FOR MAC: Use forward slashes and remove 'r' prefix
-# PROJECT_DIR = "/Users/YourUsername/Desktop/Chapter8/Coding/PriceMonitor"
-
-# FOR WINDOWS: Use this line instead
+# Configure directories and logging for WINDOWS
 PROJECT_DIR = r"C:\Users\Roryi\Desktop\Chapter 8\Coding\Price Monitor"
-
 LOG_DIR = os.path.join(PROJECT_DIR, 'logs')
 STATE_DIR = os.path.join(PROJECT_DIR, 'state')
 CSV_FILE = os.path.join(PROJECT_DIR, 'johnlewisv2.csv')
@@ -85,10 +80,11 @@ NOTIFY_EVERY_CYCLES = 3
 MAX_CHUNKS = 8
 MAX_PAGE_REQUESTS = 50
 RECENTLY_ADDED_HOURS = 24
-DAYS_TO_KEEP_UNSEEN = 7  # NEW: Keep products for 7 days even if not seen
+DAYS_TO_KEEP_UNSEEN = 7  # Keep products for 7 days even if not seen
 
 
 def get_headers():
+    """Return headers with fixed User-Agent"""
     return {
         "User-Agent": USER_AGENT,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -99,6 +95,7 @@ def get_headers():
 
 
 def clean_price(text):
+    """Clean price text to float"""
     if not text:
         return None
     text = re.split(r'\s*-\s*', text)[0]
@@ -110,6 +107,7 @@ def clean_price(text):
 
 
 def extract_product_id(url):
+    """Extract product ID from URL"""
     match = re.search(r"p(\d+)$", url)
     if match:
         product_id = match.group(1)
@@ -120,12 +118,14 @@ def extract_product_id(url):
 
 
 def normalize_url(url):
+    """Normalize URL by removing query parameters"""
     parsed = urlparse(url)
     path = parsed.path.rstrip('/')
     return f"{parsed.scheme}://{parsed.netloc}{path}"
 
 
 def normalize_size(size):
+    """Normalize size formats"""
     size = size.strip()
     size = re.sub(r'^(uk|eu)(\d+)$', r'\1 \2', size, flags=re.I)
     return size
@@ -133,6 +133,7 @@ def normalize_size(size):
 
 # Price history functions
 def load_price_history():
+    """Load price history from file"""
     try:
         with open(PRICE_HISTORY_FILE, 'r') as f:
             return json.load(f)
@@ -141,6 +142,7 @@ def load_price_history():
 
 
 def save_price_history(price_history):
+    """Save price history to file"""
     try:
         with open(PRICE_HISTORY_FILE, 'w') as f:
             json.dump(price_history, f, indent=2)
@@ -149,6 +151,7 @@ def save_price_history(price_history):
 
 
 def update_price_history(product_id, current_price, product_name):
+    """Update price history and return if recently reduced"""
     price_history = load_price_history()
     current_time = datetime.now().isoformat()
     
@@ -199,11 +202,13 @@ def update_price_history(product_id, current_price, product_name):
 
 
 def get_recently_reduced_products():
+    """Get list of recently reduced product IDs"""
     price_history = load_price_history()
     return [pid for pid, data in price_history.items() if data.get("recently_reduced", False)]
 
 
 def is_recently_added(product_id, state_file):
+    """Check if product was added within recently added threshold"""
     try:
         with open(state_file, 'r') as f:
             state = json.load(f)
@@ -309,6 +314,7 @@ def clean_old_products_from_csv(all_scanned_product_ids):
 
 
 def fetch_category_page(url, page=1, chunk=1):
+    """Fetch a category page and extract product URLs"""
     global ssl_error_count
     max_attempts = 3
     page_url = f"{url}&page={page}&chunk={chunk}" if chunk > 1 else f"{url}&page={page}"
@@ -357,12 +363,400 @@ def fetch_category_page(url, page=1, chunk=1):
 
         except requests.exceptions.SSLError as ssl_err:
             ssl_error_count += 1
-            logging.error(f"SSL error on {page_url} (attempt {attempt+1}): {ssl_err}")
+            logging.error(f"SSL error on {url} (attempt {attempt+1}): {ssl_err}")
             if attempt == max_attempts - 1:
-                send_error_webhook(f"SSL error on {page_url}: {ssl_err}")
+                send_error_webhook(f"SSL error: {url}")
                 return []
             time.sleep(random.uniform(5, 10))
             
+        except Exception as e:
+            logging.error(f"Error on {url} (attempt {attempt+1}): {e}")
+            if attempt == max_attempts - 1:
+                send_error_webhook(f"Failed: {url} - {e}")
+                return []
+            time.sleep(random.uniform(1, 2))
+    
+    return []
+
+
+def load_previous_state(state_file):
+    """Load previous state from file"""
+    try:
+        with open(state_file, "r") as f:
+            state = json.load(f)
+            cleaned_state = {}
+            
+            for product_id, data in state.items():
+                try:
+                    original_price = float(data.get("original_price")) if data.get("original_price") is not None else None
+                    latest_price = float(data.get("latest_price")) if data.get("latest_price") is not None else None
+                    stock_status = data.get("stock_status", "Unknown")
+                    url = data.get("url", "Unknown")
+                    first_seen = data.get("first_seen")
+                    
+                    if not product_id or not url:
+                        continue
+                    
+                    cleaned_state[product_id] = {
+                        "name": data.get("name"),
+                        "url": url,
+                        "original_price": original_price,
+                        "latest_price": latest_price,
+                        "stock_status": stock_status,
+                        "first_seen": first_seen
+                    }
+                except (ValueError, TypeError) as e:
+                    logging.error(f"Invalid state entry for {product_id}: {e}")
+            
+            logging.info(f"Loaded state from {state_file}: {len(cleaned_state)} items")
+            return cleaned_state
+            
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logging.warning(f"No state file {state_file}: {e}")
+        return {}
+
+
+def save_state(products, current_product_ids, state_file):
+    """Save current state to file"""
+    new_state = {}
+    current_time = datetime.now().isoformat()
+    previous_state = load_previous_state(state_file)
+    
+    for product in products:
+        product_id = product["product_id"]
+        if not product_id:
+            continue
+        
+        if any(kw.lower() in product["name"].lower() for kw in EXCLUDED_KEYWORDS):
+            continue
+        
+        if product_id in previous_state:
+            first_seen = previous_state[product_id].get('first_seen', current_time)
+        else:
+            first_seen = current_time
+            logging.info(f"NEW: {product['name']} (ID: {product_id})")
+        
+        new_state[product_id] = {
+            "name": product["name"],
+            "url": product["url"],
+            "original_price": product["original_price"],
+            "latest_price": product["current_price"],
+            "stock_status": product["stock_status"],
+            "first_seen": first_seen
+        }
+    
+    previous_state.update(new_state)
+    
+    # Remove out of stock products not seen
+    for product_id in list(previous_state.keys()):
+        if product_id in current_product_ids:
+            continue
+        stock_status = previous_state[product_id].get("stock_status", "")
+        if stock_status == "Out of Stock":
+            logging.info(f"Removing out of stock: {product_id}")
+            del previous_state[product_id]
+    
+    try:
+        with open(state_file, "w") as f:
+            json.dump(previous_state, f, indent=4)
+        logging.info(f"Saved state to {state_file}: {len(previous_state)} items")
+    except Exception as e:
+        logging.error(f"Failed to save state: {e}")
+
+
+def send_error_webhook(message):
+    """Send error webhook"""
+    webhook = DiscordWebhook(url=WEBHOOK_URL, content=message)
+    for attempt in range(3):
+        try:
+            time.sleep(random.uniform(1, 1.5))
+            webhook.execute()
+            logging.info(f"Sent error webhook: {message}")
+            return
+        except Exception as e:
+            logging.error(f"Error webhook failed (attempt {attempt+1}): {e}")
+            if attempt < 2:
+                time.sleep(2)
+
+
+def send_cycle_start_webhook(cycle, category_name):
+    """Send cycle start webhook"""
+    message = f"🚀 Monitor started - Cycle {cycle}: {category_name}"
+    webhook = DiscordWebhook(url=WEBHOOK_URL, content=message)
+    try:
+        time.sleep(random.uniform(1, 1.5))
+        webhook.execute()
+        logging.info(f"Sent cycle start webhook: {category_name}")
+    except Exception as e:
+        logging.error(f"Cycle start webhook failed: {e}")
+
+
+def send_periodic_webhook(cycle, category_name, num_products, changes):
+    """Send periodic webhook"""
+    message = f"✅ Cycle {cycle} complete: {category_name} - {num_products} products, {changes} changes"
+    webhook = DiscordWebhook(url=WEBHOOK_URL, content=message)
+    try:
+        time.sleep(random.uniform(1, 1.5))
+        webhook.execute()
+    except Exception as e:
+        logging.error(f"Periodic webhook failed: {e}")
+
+
+def is_duplicate_in_csv(product_name, product_url, check_last_n=10):
+    """Check if product is duplicate in recent CSV entries"""
+    if not os.path.exists(CSV_FILE):
+        return False
+    try:
+        with open(CSV_FILE, 'r', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            rows = list(reader)[-check_last_n:]
+            for row in rows:
+                if row.get('Product Name') == product_name and row.get('URL') == product_url:
+                    return True
+        return False
+    except Exception as e:
+        logging.error(f"Error checking CSV duplicates: {e}")
+        return False
+
+
+def send_item_webhook(product, event_type, previous_state, price_diff=None, direction=None):
+    """Send webhook for individual product"""
+    if is_duplicate_in_csv(product['name'], product['url']):
+        logging.info(f"Skipping duplicate webhook: {product['name']}")
+        return
+   
+    webhook = DiscordWebhook(url=WEBHOOK_URL)
+    embed = DiscordEmbed(
+        title=product["name"][:256],
+        url=product["url"],
+        color=0x00ff00 if product["stock_status"] == "In Stock" else 0xff0000
+    )
+   
+    if product.get("image"):
+        embed.set_thumbnail(url=product["image"])
+   
+    current_price = product["current_price"]
+    embed.add_embed_field(
+        name="Current Price",
+        value=f"£{current_price:.2f}" if current_price is not None else "N/A",
+        inline=True
+    )
+   
+    if event_type == "price_change":
+        previous_price = previous_state[product["product_id"]]["latest_price"]
+        embed.add_embed_field(
+            name="Previous Price",
+            value=f"£{previous_price:.2f}" if previous_price is not None else "N/A",
+            inline=True
+        )
+        embed.add_embed_field(
+            name="Change",
+            value=f"{direction.capitalize()} £{abs(price_diff):.2f}" if price_diff else "N/A",
+            inline=True
+        )
+    else:
+        embed.add_embed_field(name="Previous Price", value="N/A (New)", inline=True)
+        embed.add_embed_field(name="Change", value="N/A (New)", inline=True)
+   
+    original_price = product["original_price"]
+    embed.add_embed_field(
+        name="Original Price",
+        value=f"£{original_price:.2f}" if original_price else "N/A",
+        inline=True
+    )
+    embed.add_embed_field(
+        name="Discount",
+        value=f"{product['discount']:.2f}%",
+        inline=True
+    )
+    embed.add_embed_field(name="Stock", value=product["stock_status"], inline=True)
+    embed.add_embed_field(name="Category", value=product["category"], inline=True)
+   
+    sizes_value = ", ".join(product["sizes"][:5]) if product["sizes"] else "One Size"
+    embed.add_embed_field(name="Sizes", value=sizes_value[:1024], inline=False)
+    
+    variants_value = ", ".join(product["variants"][:5]) if product.get("variants") else "None"
+    embed.add_embed_field(name="Variants", value=variants_value[:1024], inline=False)
+   
+    badges = [f"{'New' if event_type == 'new' else direction.capitalize()}"]
+    if product.get("recently_reduced"):
+        badges.append("🔥 Recently Reduced")
+    
+    embed.set_footer(text=f"Alternative Assets | {' | '.join(badges)}"[:2048])
+   
+    webhook.add_embed(embed)
+    
+    for attempt in range(3):
+        try:
+            time.sleep(random.uniform(1, 1.5))
+            webhook.execute()
+            logging.info(f"Webhook sent: {product['name']}")
+            
+            # Append to CSV
+            row_data = {
+                'Product ID': product["product_id"],
+                'Product Name': product['name'],
+                'Current Price': f"{product['current_price']:.2f}" if product['current_price'] else "N/A",
+                'Original Price': f"{product['original_price']:.2f}" if product['original_price'] else "N/A",
+                'Discount': f"{product['discount']:.2f}",
+                'Stock Status': product['stock_status'],
+                'Sizes': ", ".join(product['sizes'][:10]),
+                'URL': product['url'],
+                'Event Type': event_type.capitalize(),
+                'Timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'Image': product['image'],
+                'Category': product['category'],
+                'Variants': ", ".join(product.get('variants', [])[:5])
+            }
+            
+            file_exists = os.path.exists(CSV_FILE) and os.path.getsize(CSV_FILE) > 0
+            with open(CSV_FILE, 'a', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=row_data.keys(), quoting=csv.QUOTE_ALL)
+                if not file_exists:
+                    writer.writeheader()
+                writer.writerow(row_data)
+            
+            logging.info(f"CSV appended: {row_data['Product Name']}")
+            return
+            
+        except Exception as e:
+            logging.error(f"Webhook failed (attempt {attempt+1}): {e}")
+            if attempt < 2:
+                time.sleep(2)
+
+
+def send_webhook(products, previous_state, category_name):
+    """Send webhooks for new/changed products"""
+    items_to_report = []
+    
+    for product in products:
+        product_id = product["product_id"]
+        current_price = product["current_price"]
+        stock_status = product["stock_status"]
+       
+        if any(kw.lower() in product["name"].lower() for kw in EXCLUDED_KEYWORDS):
+            continue
+
+        event_type = None
+        price_diff = None
+        direction = None
+
+        if product_id not in previous_state:
+            event_type = "new"
+            items_to_report.append((product, event_type, price_diff, direction))
+            logging.info(f"NEW: {product['name']} (ID: {product_id})")
+        else:
+            old_price = previous_state[product_id]["latest_price"]
+            old_stock = previous_state[product_id]["stock_status"]
+            
+            price_changed = (
+                old_price is not None and current_price is not None and
+                abs(current_price - old_price) > 0.01
+            )
+            
+            if price_changed:
+                event_type = "price_change"
+                price_diff = current_price - old_price if current_price and old_price else None
+                direction = "increased" if price_diff and price_diff > 0 else "decreased" if price_diff and price_diff < 0 else "changed"
+                items_to_report.append((product, event_type, price_diff, direction))
+                logging.info(f"PRICE CHANGE: {product['name']} ({old_price} -> {current_price})")
+
+    items_to_report.sort(key=lambda x: x[0]["discount"] or 0, reverse=True)
+
+    for product, event_type, price_diff, direction in items_to_report:
+        send_item_webhook(product, event_type, previous_state, price_diff, direction)
+        time.sleep(random.uniform(1, 1.5))
+
+    return len(items_to_report)
+
+
+def signal_handler(sig, frame):
+    """Handle shutdown signals"""
+    logging.info("Shutdown signal received")
+    print("Shutting down gracefully...")
+    sys.exit(0)
+
+
+def main():
+    """Main monitoring loop"""
+    global cycle_count, ssl_error_count, excluded_keyword_count
+    logging.info("Starting John Lewis Monitor V2 (Multi-variant + improved CSV logic)")
+    print("🚀 Starting John Lewis Monitor V2")
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+   
+    while True:
+        try:
+            cycle_count += 1
+            ssl_error_count = 0
+            excluded_keyword_count = 0
+            start_time = datetime.now()
+            
+            print(f"\n{'='*60}")
+            print(f"CYCLE {cycle_count} - {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"{'='*60}\n")
+           
+            total_products = 0
+            total_changes = 0
+            all_scanned_ids = set()
+
+            for category_name, category_config in CATEGORY_URLS.items():
+                print(f"\n📦 Processing: {category_name}")
+                send_cycle_start_webhook(cycle_count, category_name)
+
+                previous_state = load_previous_state(category_config["state_file"])
+                product_urls = fetch_category_products(category_name, category_config)
+                
+                all_products = []
+                current_product_ids = set()
+
+                total_urls = len(product_urls)
+                for idx, url in enumerate(product_urls, 1):
+                    products_list = fetch_product_info(url, idx, total_urls, category_name)
+                    
+                    if products_list:  # Now returns list
+                        for product in products_list:
+                            all_products.append(product)
+                            current_product_ids.add(product["product_id"])
+                            all_scanned_ids.add(product["product_id"])
+
+                changes = 0
+                if all_products:
+                    changes = send_webhook(all_products, previous_state, category_name)
+                    save_state(all_products, current_product_ids, category_config["state_file"])
+                
+                total_products += len(all_products)
+                total_changes += changes
+
+                print(f"✅ {category_name}: {len(all_products)} products, {changes} changes")
+                time.sleep(random.uniform(30, 60))
+           
+            # Clean CSV with improved logic
+            print("\n🧹 Cleaning CSV...")
+            clean_old_products_from_csv(all_scanned_ids)
+           
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds() / 60.0
+            
+            print(f"\n{'='*60}")
+            print(f"CYCLE {cycle_count} COMPLETE")
+            print(f"Duration: {duration:.1f} minutes")
+            print(f"Products: {total_products}")
+            print(f"Changes: {total_changes}")
+            print(f"SSL Errors: {ssl_error_count}")
+            print(f"Excluded: {excluded_keyword_count}")
+            print(f"{'='*60}\n")
+
+            if cycle_count % NOTIFY_EVERY_CYCLES == 0:
+                summary = f"✅ Cycle {cycle_count}: {total_products} products, {total_changes} changes"
+                webhook = DiscordWebhook(url=WEBHOOK_URL, content=summary)
+                webhook.execute()
+
+            check_interval = random.uniform(6900, 7500)
+            print(f"⏰ Next check in {check_interval/60:.1f} minutes...")
+            time.sleep(check_interval)
+       
         except Exception as e:
             logging.error(f"Script crashed: {e}")
             send_error_webhook(f"Monitor crashed: {e}")
@@ -372,15 +766,26 @@ def fetch_category_page(url, page=1, chunk=1):
 
 
 if __name__ == "__main__":
-    main()
+    main()_err:
+            ssl_error_count += 1
+            logging.error(f"SSL error on {page_url} (attempt {attempt+1}): {ssl_err}")
+            if attempt == max_attempts - 1:
+                send_error_webhook(f"SSL error on {page_url}: {ssl_err}")
+                return []
+            time.sleep(random.uniform(5, 10))
+            
+        except Exception as e:
             logging.error(f"Error fetching {page_url} (attempt {attempt+1}): {e}")
             if attempt == max_attempts - 1:
                 send_error_webhook(f"Failed {page_url}: {e}")
                 return []
             time.sleep(random.uniform(1, 2))
+    
+    return []
 
 
 def fetch_category_products(category_name, category_config):
+    """Fetch all product URLs for a category"""
     all_product_urls = []
     product_id_set = set()
     request_count = 0
@@ -694,388 +1099,4 @@ def fetch_product_info(url, counter, total, category_name):
             
             return products
 
-        except requests.exceptions.SSLError as ssl_err:
-            ssl_error_count += 1
-            logging.error(f"SSL error on {url} (attempt {attempt+1}): {ssl_err}")
-            if attempt == max_attempts - 1:
-                send_error_webhook(f"SSL error: {url}")
-                return []
-            time.sleep(random.uniform(5, 10))
-            
-        except Exception as e:
-            logging.error(f"Error on {url} (attempt {attempt+1}): {e}")
-            if attempt == max_attempts - 1:
-                send_error_webhook(f"Failed: {url} - {e}")
-                return []
-            time.sleep(random.uniform(1, 2))
-
-
-def load_previous_state(state_file):
-    try:
-        with open(state_file, "r") as f:
-            state = json.load(f)
-            cleaned_state = {}
-            
-            for product_id, data in state.items():
-                try:
-                    original_price = float(data.get("original_price")) if data.get("original_price") is not None else None
-                    latest_price = float(data.get("latest_price")) if data.get("latest_price") is not None else None
-                    stock_status = data.get("stock_status", "Unknown")
-                    url = data.get("url", "Unknown")
-                    first_seen = data.get("first_seen")
-                    
-                    if not product_id or not url:
-                        continue
-                    
-                    cleaned_state[product_id] = {
-                        "name": data.get("name"),
-                        "url": url,
-                        "original_price": original_price,
-                        "latest_price": latest_price,
-                        "stock_status": stock_status,
-                        "first_seen": first_seen
-                    }
-                except (ValueError, TypeError) as e:
-                    logging.error(f"Invalid state entry for {product_id}: {e}")
-            
-            logging.info(f"Loaded state from {state_file}: {len(cleaned_state)} items")
-            return cleaned_state
-            
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        logging.warning(f"No state file {state_file}: {e}")
-        return {}
-
-
-def save_state(products, current_product_ids, state_file):
-    new_state = {}
-    current_time = datetime.now().isoformat()
-    previous_state = load_previous_state(state_file)
-    
-    for product in products:
-        product_id = product["product_id"]
-        if not product_id:
-            continue
-        
-        if any(kw.lower() in product["name"].lower() for kw in EXCLUDED_KEYWORDS):
-            continue
-        
-        if product_id in previous_state:
-            first_seen = previous_state[product_id].get('first_seen', current_time)
-        else:
-            first_seen = current_time
-            logging.info(f"NEW: {product['name']} (ID: {product_id})")
-        
-        new_state[product_id] = {
-            "name": product["name"],
-            "url": product["url"],
-            "original_price": product["original_price"],
-            "latest_price": product["current_price"],
-            "stock_status": product["stock_status"],
-            "first_seen": first_seen
-        }
-    
-    previous_state.update(new_state)
-    
-    # Remove out of stock products not seen
-    for product_id in list(previous_state.keys()):
-        if product_id in current_product_ids:
-            continue
-        stock_status = previous_state[product_id].get("stock_status", "")
-        if stock_status == "Out of Stock":
-            logging.info(f"Removing out of stock: {product_id}")
-            del previous_state[product_id]
-    
-    try:
-        with open(state_file, "w") as f:
-            json.dump(previous_state, f, indent=4)
-        logging.info(f"Saved state to {state_file}: {len(previous_state)} items")
-    except Exception as e:
-        logging.error(f"Failed to save state: {e}")
-
-
-def send_error_webhook(message):
-    webhook = DiscordWebhook(url=WEBHOOK_URL, content=message)
-    for attempt in range(3):
-        try:
-            time.sleep(random.uniform(1, 1.5))
-            webhook.execute()
-            logging.info(f"Sent error webhook: {message}")
-            return
-        except Exception as e:
-            logging.error(f"Error webhook failed (attempt {attempt+1}): {e}")
-            if attempt < 2:
-                time.sleep(2)
-
-
-def send_cycle_start_webhook(cycle, category_name):
-    message = f"🚀 Monitor started - Cycle {cycle}: {category_name}"
-    webhook = DiscordWebhook(url=WEBHOOK_URL, content=message)
-    try:
-        time.sleep(random.uniform(1, 1.5))
-        webhook.execute()
-        logging.info(f"Sent cycle start webhook: {category_name}")
-    except Exception as e:
-        logging.error(f"Cycle start webhook failed: {e}")
-
-
-def send_periodic_webhook(cycle, category_name, num_products, changes):
-    message = f"✅ Cycle {cycle} complete: {category_name} - {num_products} products, {changes} changes"
-    webhook = DiscordWebhook(url=WEBHOOK_URL, content=message)
-    try:
-        time.sleep(random.uniform(1, 1.5))
-        webhook.execute()
-    except Exception as e:
-        logging.error(f"Periodic webhook failed: {e}")
-
-
-def is_duplicate_in_csv(product_name, product_url, check_last_n=10):
-    if not os.path.exists(CSV_FILE):
-        return False
-    try:
-        with open(CSV_FILE, 'r', encoding='utf-8') as csvfile:
-            reader = csv.DictReader(csvfile)
-            rows = list(reader)[-check_last_n:]
-            for row in rows:
-                if row.get('Product Name') == product_name and row.get('URL') == product_url:
-                    return True
-        return False
-    except Exception as e:
-        logging.error(f"Error checking CSV duplicates: {e}")
-        return False
-
-
-def send_item_webhook(product, event_type, previous_state, price_diff=None, direction=None):
-    if is_duplicate_in_csv(product['name'], product['url']):
-        logging.info(f"Skipping duplicate webhook: {product['name']}")
-        return
-   
-    webhook = DiscordWebhook(url=WEBHOOK_URL)
-    embed = DiscordEmbed(
-        title=product["name"][:256],
-        url=product["url"],
-        color=0x00ff00 if product["stock_status"] == "In Stock" else 0xff0000
-    )
-   
-    if product.get("image"):
-        embed.set_thumbnail(url=product["image"])
-   
-    current_price = product["current_price"]
-    embed.add_embed_field(
-        name="Current Price",
-        value=f"£{current_price:.2f}" if current_price is not None else "N/A",
-        inline=True
-    )
-   
-    if event_type == "price_change":
-        previous_price = previous_state[product["product_id"]]["latest_price"]
-        embed.add_embed_field(
-            name="Previous Price",
-            value=f"£{previous_price:.2f}" if previous_price is not None else "N/A",
-            inline=True
-        )
-        embed.add_embed_field(
-            name="Change",
-            value=f"{direction.capitalize()} £{abs(price_diff):.2f}" if price_diff else "N/A",
-            inline=True
-        )
-    else:
-        embed.add_embed_field(name="Previous Price", value="N/A (New)", inline=True)
-        embed.add_embed_field(name="Change", value="N/A (New)", inline=True)
-   
-    original_price = product["original_price"]
-    embed.add_embed_field(
-        name="Original Price",
-        value=f"£{original_price:.2f}" if original_price else "N/A",
-        inline=True
-    )
-    embed.add_embed_field(
-        name="Discount",
-        value=f"{product['discount']:.2f}%",
-        inline=True
-    )
-    embed.add_embed_field(name="Stock", value=product["stock_status"], inline=True)
-    embed.add_embed_field(name="Category", value=product["category"], inline=True)
-   
-    sizes_value = ", ".join(product["sizes"][:5]) if product["sizes"] else "One Size"
-    embed.add_embed_field(name="Sizes", value=sizes_value[:1024], inline=False)
-    
-    variants_value = ", ".join(product["variants"][:5]) if product.get("variants") else "None"
-    embed.add_embed_field(name="Variants", value=variants_value[:1024], inline=False)
-   
-    badges = [f"{'New' if event_type == 'new' else direction.capitalize()}"]
-    if product.get("recently_reduced"):
-        badges.append("🔥 Recently Reduced")
-    
-    embed.set_footer(text=f"Alternative Assets | {' | '.join(badges)}"[:2048])
-   
-    webhook.add_embed(embed)
-    
-    for attempt in range(3):
-        try:
-            time.sleep(random.uniform(1, 1.5))
-            webhook.execute()
-            logging.info(f"Webhook sent: {product['name']}")
-            
-            # Append to CSV
-            row_data = {
-                'Product ID': product["product_id"],
-                'Product Name': product['name'],
-                'Current Price': f"{product['current_price']:.2f}" if product['current_price'] else "N/A",
-                'Original Price': f"{product['original_price']:.2f}" if product['original_price'] else "N/A",
-                'Discount': f"{product['discount']:.2f}",
-                'Stock Status': product['stock_status'],
-                'Sizes': ", ".join(product['sizes'][:10]),
-                'URL': product['url'],
-                'Event Type': event_type.capitalize(),
-                'Timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'Image': product['image'],
-                'Category': product['category'],
-                'Variants': ", ".join(product.get('variants', [])[:5])
-            }
-            
-            file_exists = os.path.exists(CSV_FILE) and os.path.getsize(CSV_FILE) > 0
-            with open(CSV_FILE, 'a', newline='', encoding='utf-8') as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=row_data.keys(), quoting=csv.QUOTE_ALL)
-                if not file_exists:
-                    writer.writeheader()
-                writer.writerow(row_data)
-            
-            logging.info(f"CSV appended: {row_data['Product Name']}")
-            return
-            
-        except Exception as e:
-            logging.error(f"Webhook failed (attempt {attempt+1}): {e}")
-            if attempt < 2:
-                time.sleep(2)
-
-
-def send_webhook(products, previous_state, category_name):
-    items_to_report = []
-    
-    for product in products:
-        product_id = product["product_id"]
-        current_price = product["current_price"]
-        stock_status = product["stock_status"]
-       
-        if any(kw.lower() in product["name"].lower() for kw in EXCLUDED_KEYWORDS):
-            continue
-
-        event_type = None
-        price_diff = None
-        direction = None
-
-        if product_id not in previous_state:
-            event_type = "new"
-            items_to_report.append((product, event_type, price_diff, direction))
-            logging.info(f"NEW: {product['name']} (ID: {product_id})")
-        else:
-            old_price = previous_state[product_id]["latest_price"]
-            old_stock = previous_state[product_id]["stock_status"]
-            
-            price_changed = (
-                old_price is not None and current_price is not None and
-                abs(current_price - old_price) > 0.01
-            )
-            
-            if price_changed:
-                event_type = "price_change"
-                price_diff = current_price - old_price if current_price and old_price else None
-                direction = "increased" if price_diff and price_diff > 0 else "decreased" if price_diff and price_diff < 0 else "changed"
-                items_to_report.append((product, event_type, price_diff, direction))
-                logging.info(f"PRICE CHANGE: {product['name']} ({old_price} -> {current_price})")
-
-    items_to_report.sort(key=lambda x: x[0]["discount"] or 0, reverse=True)
-
-    for product, event_type, price_diff, direction in items_to_report:
-        send_item_webhook(product, event_type, previous_state, price_diff, direction)
-        time.sleep(random.uniform(1, 1.5))
-
-    return len(items_to_report)
-
-
-def signal_handler(sig, frame):
-    logging.info("Shutdown signal received")
-    print("Shutting down...")
-    sys.exit(0)
-
-
-def main():
-    global cycle_count, ssl_error_count, excluded_keyword_count
-    logging.info("Starting John Lewis Monitor V2 (Multi-variant + improved CSV logic)")
-    print("🚀 Starting John Lewis Monitor V2")
-
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-   
-    while True:
-        try:
-            cycle_count += 1
-            ssl_error_count = 0
-            excluded_keyword_count = 0
-            start_time = datetime.now()
-            
-            print(f"\n{'='*60}")
-            print(f"CYCLE {cycle_count} - {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"{'='*60}\n")
-           
-            total_products = 0
-            total_changes = 0
-            all_scanned_ids = set()
-
-            for category_name, category_config in CATEGORY_URLS.items():
-                print(f"\n📦 Processing: {category_name}")
-                send_cycle_start_webhook(cycle_count, category_name)
-
-                previous_state = load_previous_state(category_config["state_file"])
-                product_urls = fetch_category_products(category_name, category_config)
-                
-                all_products = []
-                current_product_ids = set()
-
-                total_urls = len(product_urls)
-                for idx, url in enumerate(product_urls, 1):
-                    products_list = fetch_product_info(url, idx, total_urls, category_name)
-                    
-                    if products_list:  # Now returns list
-                        for product in products_list:
-                            all_products.append(product)
-                            current_product_ids.add(product["product_id"])
-                            all_scanned_ids.add(product["product_id"])
-
-                changes = 0
-                if all_products:
-                    changes = send_webhook(all_products, previous_state, category_name)
-                    save_state(all_products, current_product_ids, category_config["state_file"])
-                
-                total_products += len(all_products)
-                total_changes += changes
-
-                print(f"✅ {category_name}: {len(all_products)} products, {changes} changes")
-                time.sleep(random.uniform(30, 60))
-           
-            # Clean CSV with improved logic
-            print("\n🧹 Cleaning CSV...")
-            clean_old_products_from_csv(all_scanned_ids)
-           
-            end_time = datetime.now()
-            duration = (end_time - start_time).total_seconds() / 60.0
-            
-            print(f"\n{'='*60}")
-            print(f"CYCLE {cycle_count} COMPLETE")
-            print(f"Duration: {duration:.1f} minutes")
-            print(f"Products: {total_products}")
-            print(f"Changes: {total_changes}")
-            print(f"SSL Errors: {ssl_error_count}")
-            print(f"Excluded: {excluded_keyword_count}")
-            print(f"{'='*60}\n")
-
-            if cycle_count % NOTIFY_EVERY_CYCLES == 0:
-                summary = f"✅ Cycle {cycle_count}: {total_products} products, {total_changes} changes"
-                webhook = DiscordWebhook(url=WEBHOOK_URL, content=summary)
-                webhook.execute()
-
-            check_interval = random.uniform(6900, 7500)
-            print(f"⏰ Next check in {check_interval/60:.1f} minutes...")
-            time.sleep(check_interval)
-       
-        except Exception as e:
+        except requests.exceptions.SSLError as ssl
